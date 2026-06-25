@@ -4,7 +4,7 @@ import { useLocation, Link } from 'react-router-dom'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 
 const INCOME_LABELS = {
   'below_2.5L': 'Below ₹2.5 Lakh/yr',
