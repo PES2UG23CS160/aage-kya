@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Prevent horizontal overflow on mobile */
+    overflow-x: hidden;
+  }
+
+  body {
+    background-color: #0F172A;
+    color: #F8FAFC;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    /* Slightly larger base font on mobile for readability */
+    font-size: 16px;
+  }
+
+  /* Bigger tap targets on mobile */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-saffron text-white font-semibold px-6 py-3 rounded-xl
+           hover:bg-saffron-light transition-all duration-300
+           shadow-lg hover:shadow-saffron/30 hover:scale-105 active:scale-95
+           /* Full-width on mobile, auto on sm+ */
+           w-full sm:w-auto inline-flex items-center justify-center;
+  }
+
+  .btn-outline {
+    @apply border border-saffron text-saffron font-semibold px-6 py-3 rounded-xl
+           hover:bg-saffron hover:text-white transition-all duration-300
+           hover:scale-105 active:scale-95
+           w-full sm:w-auto inline-flex items-center justify-center;
+  }
+
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl
+           hover:border-saffron/30 transition-all duration-300;
+  }
+
+  .section-title {
+    @apply font-display text-3xl sm:text-4xl md:text-5xl font-bold text-light-gray;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-saffron to-saffron-light bg-clip-text text-transparent;
+  }
+
+  .nav-link {
+    @apply text-gray-400 hover:text-saffron transition-colors duration-200 font-medium text-sm;
+  }
+
+  /* Microcopy helper text style */
+  .field-hint {
+    @apply text-gray-500 text-xs mt-1.5 leading-relaxed;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ── Page transition ────────────────────────────────────────────────────────── */
+.page-enter {
+  animation: pageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Custom scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #1E293B;
+}
+::-webkit-scrollbar-thumb {
+  background: #FF6B00;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF8C33;
+}
+
+/* ── Mobile: increase heading legibility ────────────────────────────────────── */
+@media (max-width: 640px) {
+  h1 { line-height: 1.15; }
+  h2 { line-height: 1.2; }
+
+  /* Ensure textareas don't cause overflow */
+  textarea {
+    max-width: 100%;
+  }
+
+  /* Full-width CTAs that are inside flex containers on mobile */
+  .cta-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cta-group > * {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+}

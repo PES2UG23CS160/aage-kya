@@ -1,0 +1,535 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Delhi', 'Jammu & Kashmir', 'Ladakh', 'Puducherry', 'Chandigarh',
+]
+
+const INCOME_RANGES = [
+  { value: 'below_2.5L', label: 'Below ₹2.5 Lakh / year' },
+  { value: '2.5L-5L',   label: '₹2.5L – ₹5 Lakh / year' },
+  { value: '5L-10L',    label: '₹5L – ₹10 Lakh / year' },
+  { value: 'above_10L', label: 'Above ₹10 Lakh / year' },
+]
+
+const CITY_OPTIONS = [
+  { value: 'same_city', label: 'Same City',          icon: '🏠', desc: 'Stay close to home' },
+  { value: 'nearby',    label: 'Nearby Cities',       icon: '🚆', desc: 'Within the state'  },
+  { value: 'anywhere',  label: 'Anywhere in India',   icon: '✈️', desc: 'Open to relocation' },
+]
+
+const STEPS = [
+  { id: 1, title: 'Basic Info',     subtitle: 'Tell us about your results and background.', icon: '📋' },
+  { id: 2, title: 'Your Situation', subtitle: "This shapes what's actually realistic for you.", icon: '🏡' },
+  { id: 3, title: 'The Real You',   subtitle: 'Honest answers get honest guidance. No judgment.', icon: '💬' },
+]
+
+const INITIAL_FORM = {
+  fullName: '', state: '', board: '', stream: '', marks: '',
+  incomeRange: '', firstGenCollege: null, preferredCities: [],
+  interests: '', biggestFear: '',
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+function validate(step, form) {
+  const e = {}
+  if (step === 1) {
+    if (!form.fullName.trim())    e.fullName = 'Please enter your name.'
+    if (!form.state)              e.state    = 'Please select your state.'
+    if (!form.board)              e.board    = 'Please select your board.'
+    if (!form.stream)             e.stream   = 'Please pick your stream.'
+    if (!form.marks || isNaN(form.marks) || +form.marks < 0 || +form.marks > 100)
+      e.marks = 'Enter a valid percentage between 0 and 100.'
+  }
+  if (step === 2) {
+    if (!form.incomeRange)              e.incomeRange      = 'Please select a range.'
+    if (form.firstGenCollege === null)  e.firstGenCollege  = 'Please select Yes or No.'
+    if (form.preferredCities.length === 0) e.preferredCities = 'Pick at least one option.'
+  }
+  if (step === 3) {
+    if (!form.interests.trim())   e.interests   = 'Please fill this in — it really matters.'
+    if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
+  }
+  return e
+}
+
+// ─── Reusable Field Primitives ────────────────────────────────────────────────
+
+const base =
+  'w-full bg-navy-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm transition-all duration-200 outline-none focus:ring-2 focus:ring-saffron/40'
+const normal  = `${base} border-white/10 hover:border-white/20 focus:border-saffron/60`
+const invalid = `${base} border-rose-500/50 focus:border-rose-500 focus:ring-rose-500/30`
+
+function Label({ children, required }) {
+  return (
+    <label className="block text-sm font-semibold text-gray-200 mb-1.5">
+      {children}{required && <span className="text-saffron ml-0.5">*</span>}
+    </label>
+  )
+}
+
+function Hint({ children }) {
+  return <p className="field-hint">{children}</p>
+}
+
+function FieldError({ msg }) {
+  if (!msg) return null
+  return (
+    <p className="mt-1.5 text-xs text-rose-400 flex items-center gap-1.5">
+      <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+      </svg>
+      {msg}
+    </p>
+  )
+}
+
+function TextField({ id, label, hint, required, error, ...rest }) {
+  return (
+    <div>
+      <Label required={required}>{label}</Label>
+      <input id={id} className={error ? invalid : normal} {...rest} />
+      {hint && !error && <Hint>{hint}</Hint>}
+      <FieldError msg={error} />
+    </div>
+  )
+}
+
+function SelectField({ id, label, hint, required, error, value, onChange, options, placeholder }) {
+  return (
+    <div>
+      <Label required={required}>{label}</Label>
+      <div className="relative">
+        <select id={id} value={value} onChange={onChange}
+          className={`${error ? invalid : normal} appearance-none pr-10 cursor-pointer`}>
+          <option value="" disabled>{placeholder}</option>
+          {options.map((o) =>
+            typeof o === 'string'
+              ? <option key={o} value={o}>{o}</option>
+              : <option key={o.value} value={o.value}>{o.label}</option>
+          )}
+        </select>
+        <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+          fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+      {hint && !error && <Hint>{hint}</Hint>}
+      <FieldError msg={error} />
+    </div>
+  )
+}
+
+function PillGroup({ label, hint, options, value, onToggle, error, required }) {
+  return (
+    <div>
+      <Label required={required}>{label}</Label>
+      <div className="flex flex-wrap gap-2 mt-2">
+        {options.map((opt) => {
+          const val = opt.value ?? opt
+          const selected = value === val
+          return (
+            <button key={val} type="button" onClick={() => onToggle(val)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all duration-200
+                ${selected
+                  ? 'bg-saffron text-white border-saffron shadow-md shadow-saffron/25 scale-[1.03]'
+                  : 'bg-navy-800 border-white/10 text-gray-300 hover:border-saffron/40 hover:text-white'
+                }`}>
+              {opt.label ?? opt}
+            </button>
+          )
+        })}
+      </div>
+      {hint && !error && <Hint>{hint}</Hint>}
+      <FieldError msg={error} />
+    </div>
+  )
+}
+
+function YesNoToggle({ label, hint, value, onChange, error, required }) {
+  return (
+    <div>
+      <Label required={required}>{label}</Label>
+      <div className="grid grid-cols-2 gap-3 mt-2">
+        {[{ v: true, label: 'Yes 🙋' }, { v: false, label: 'No 🤷' }].map(({ v, label: l }) => (
+          <button key={String(v)} type="button" onClick={() => onChange(v)}
+            className={`py-3.5 rounded-xl text-sm font-semibold border transition-all duration-200
+              ${value === v
+                ? 'bg-saffron text-white border-saffron shadow-md shadow-saffron/25'
+                : 'bg-navy-800 border-white/10 text-gray-300 hover:border-saffron/40'
+              }`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {hint && !error && <Hint>{hint}</Hint>}
+      <FieldError msg={error} />
+    </div>
+  )
+}
+
+function CityCard({ option, selected, onToggle }) {
+  return (
+    <button type="button" onClick={() => onToggle(option.value)}
+      className={`flex flex-col items-center gap-1.5 p-3 sm:p-4 rounded-2xl border text-center transition-all duration-200
+        ${selected
+          ? 'bg-saffron/15 border-saffron text-white shadow-md shadow-saffron/20 scale-[1.03]'
+          : 'bg-navy-800 border-white/10 text-gray-300 hover:border-saffron/30 hover:bg-saffron/5'
+        }`}>
+      <span className="text-2xl sm:text-3xl">{option.icon}</span>
+      <span className="font-semibold text-xs sm:text-sm leading-tight">{option.label}</span>
+      <span className="text-xs text-gray-400 hidden sm:block">{option.desc}</span>
+      {selected && (
+        <span className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-saffron flex items-center justify-center mt-0.5">
+          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+          </svg>
+        </span>
+      )}
+    </button>
+  )
+}
+
+// ─── Step 1 ───────────────────────────────────────────────────────────────────
+
+function Step1({ form, setForm, errors }) {
+  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
+  const streams = ['Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities']
+
+  return (
+    <div className="space-y-6">
+
+      <TextField
+        id="fullName" label="Full Name" required type="text"
+        placeholder="e.g. Priya Sharma"
+        value={form.fullName} onChange={set('fullName')}
+        error={errors.fullName}
+        hint="We'll use your first name to personalise your result. Nothing gets shared."
+      />
+
+      <div className="grid sm:grid-cols-2 gap-5">
+        <SelectField
+          id="state" label="Your State" required
+          placeholder="Select state"
+          value={form.state} onChange={set('state')}
+          options={INDIAN_STATES} error={errors.state}
+          hint="Helps us show colleges and schemes relevant to where you live."
+        />
+        <SelectField
+          id="board" label="Board" required
+          placeholder="Select board"
+          value={form.board} onChange={set('board')}
+          options={['CBSE', 'ICSE', 'State Board']} error={errors.board}
+          hint="This affects which entrance exams you're eligible for."
+        />
+      </div>
+
+      <PillGroup
+        label="Stream" required
+        options={streams}
+        value={form.stream}
+        onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
+        error={errors.stream}
+        hint="Pick the stream you appeared for — it's okay if you wish it was different."
+      />
+
+      <div>
+        <Label required>Marks Percentage</Label>
+        <div className="relative">
+          <input
+            id="marks" type="number" min="0" max="100"
+            placeholder="e.g. 78"
+            value={form.marks}
+            onChange={set('marks')}
+            className={`${errors.marks ? invalid : normal} pr-10`}
+          />
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">%</span>
+        </div>
+        {/* Live score bar */}
+        {form.marks && !isNaN(+form.marks) && +form.marks >= 0 && +form.marks <= 100 && (
+          <div className="mt-2.5 h-1.5 bg-navy-700 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                +form.marks >= 75 ? 'bg-emerald-400' : +form.marks >= 50 ? 'bg-saffron' : 'bg-rose-400'
+              }`}
+              style={{ width: `${form.marks}%` }}
+            />
+          </div>
+        )}
+        {!errors.marks && (
+          <Hint>Be honest. Your guidance is only useful if it&apos;s based on reality — not what you wish your marks were.</Hint>
+        )}
+        <FieldError msg={errors.marks} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 2 ───────────────────────────────────────────────────────────────────
+
+function Step2({ form, setForm, errors }) {
+  const toggleCity = (val) =>
+    setForm((f) => ({
+      ...f,
+      preferredCities: f.preferredCities.includes(val)
+        ? f.preferredCities.filter((c) => c !== val)
+        : [...f.preferredCities, val],
+    }))
+
+  return (
+    <div className="space-y-7">
+
+      <SelectField
+        id="incomeRange" label="Family Income Range" required
+        placeholder="Select income range"
+        value={form.incomeRange}
+        onChange={(e) => setForm((f) => ({ ...f, incomeRange: e.target.value }))}
+        options={INCOME_RANGES} error={errors.incomeRange}
+        hint="No judgment — this shapes what's actually realistic and affordable for you. Colleges and scholarships depend on this."
+      />
+
+      <YesNoToggle
+        label="Are you the first person in your family to go to college?"
+        required
+        value={form.firstGenCollege}
+        onChange={(v) => setForm((f) => ({ ...f, firstGenCollege: v }))}
+        error={errors.firstGenCollege}
+        hint="First-gen students face different challenges — hostel, family pressure, feeling like an outsider. Knowing this helps us guide you better."
+      />
+
+      <div>
+        <Label required>Where are you open to studying?</Label>
+        <p className="field-hint mb-3">Select all that apply. You can always change your mind later — this is just for now.</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {CITY_OPTIONS.map((opt) => (
+            <CityCard
+              key={opt.value}
+              option={opt}
+              selected={form.preferredCities.includes(opt.value)}
+              onToggle={toggleCity}
+            />
+          ))}
+        </div>
+        <FieldError msg={errors.preferredCities} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 3 ───────────────────────────────────────────────────────────────────
+
+function Step3({ form, setForm, errors }) {
+  const MAX = 500
+  const set = (field) => (e) =>
+    setForm((f) => ({ ...f, [field]: e.target.value.slice(0, MAX) }))
+
+  return (
+    <div className="space-y-7">
+
+      <div>
+        <Label required>What are you actually interested in?</Label>
+        <Hint>Hobbies, things you google at 2am, subjects you liked, stuff you do for fun — literally anything. There are no wrong answers here.</Hint>
+        <textarea
+          id="interests" rows={4}
+          placeholder="e.g. I love designing posters and spend hours on YouTube watching tech reviews. I also really like debating with people..."
+          value={form.interests} onChange={set('interests')}
+          className={`${errors.interests ? invalid : normal} resize-none mt-2`}
+        />
+        <div className="flex justify-between items-start mt-1">
+          <FieldError msg={errors.interests} />
+          <span className={`text-xs ml-auto flex-shrink-0 ${form.interests.length > 450 ? 'text-rose-400' : 'text-gray-600'}`}>
+            {form.interests.length}/{MAX}
+          </span>
+        </div>
+      </div>
+
+      <div>
+        <Label required>What is your biggest fear about what comes next?</Label>
+        <Hint>Be honest. This helps us give you real advice, not generic stuff. Your answer stays private — we don&apos;t share it with anyone.</Hint>
+        <textarea
+          id="biggestFear" rows={4}
+          placeholder="e.g. I'm scared of picking the wrong degree and wasting 4 years. My parents want me to be an engineer but I have no idea if I'll like it..."
+          value={form.biggestFear} onChange={set('biggestFear')}
+          className={`${errors.biggestFear ? invalid : normal} resize-none mt-2`}
+        />
+        <div className="flex justify-between items-start mt-1">
+          <FieldError msg={errors.biggestFear} />
+          <span className={`text-xs ml-auto flex-shrink-0 ${form.biggestFear.length > 450 ? 'text-rose-400' : 'text-gray-600'}`}>
+            {form.biggestFear.length}/{MAX}
+          </span>
+        </div>
+      </div>
+
+      {/* Privacy reassurance */}
+      <div className="flex items-start gap-3 p-4 bg-saffron/8 border border-saffron/20 rounded-xl">
+        <span className="text-xl flex-shrink-0">🔒</span>
+        <p className="text-gray-300 text-sm leading-relaxed">
+          Your answers are used <strong className="text-white">only</strong> to personalise your guidance.
+          We don&apos;t share them with colleges, parents, or anyone else. Ever.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function Onboarding() {
+  const [step, setStep]     = useState(1)
+  const [form, setForm]     = useState(INITIAL_FORM)
+  const [errors, setErrors] = useState({})
+  const navigate = useNavigate()
+
+  const total       = STEPS.length
+  const currentStep = STEPS[step - 1]
+
+  const handleNext = () => {
+    const errs = validate(step, form)
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      const firstId = Object.keys(errs)[0]
+      document.getElementById(firstId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    setErrors({})
+    if (step < total) {
+      setStep((s) => s + 1)
+    } else {
+      localStorage.setItem('aageKyaFormData', JSON.stringify(form))
+      navigate('/result', { state: { formData: form } })
+    }
+  }
+
+  const handleBack = () => {
+    setErrors({})
+    setStep((s) => Math.max(1, s - 1))
+  }
+
+  return (
+    <main className="pt-16 min-h-screen pb-12">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6">
+
+        {/* ── Progress tracker ── */}
+        <div className="pt-8 pb-7">
+          {/* Step dots + connecting line */}
+          <div className="flex items-center justify-between mb-5 relative">
+            <div className="absolute top-4 left-4 right-4 h-0.5 bg-white/10" />
+            <div
+              className="absolute top-4 left-4 h-0.5 bg-saffron transition-all duration-700"
+              style={{ width: `calc(${((step - 1) / (total - 1)) * 100}%)` }}
+            />
+            {STEPS.map((s) => (
+              <div key={s.id} className="relative z-10 flex flex-col items-center gap-2">
+                <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300
+                  ${s.id < step  ? 'bg-saffron border-saffron text-white'
+                  : s.id === step ? 'bg-navy border-saffron text-saffron ring-4 ring-saffron/20'
+                                  : 'bg-navy border-white/20 text-gray-600'}`}>
+                  {s.id < step
+                    ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                      </svg>
+                    : s.id}
+                </div>
+                <span className={`text-xs font-medium hidden sm:block transition-colors
+                  ${s.id === step ? 'text-saffron' : s.id < step ? 'text-gray-400' : 'text-gray-700'}`}>
+                  {s.title}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Progress bar */}
+          <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-saffron to-saffron-light rounded-full transition-all duration-700"
+              style={{ width: `${(step / total) * 100}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-2">
+            <span className="text-gray-600 text-xs">Step {step} of {total}</span>
+            <span className="text-saffron text-xs font-semibold">{Math.round((step / total) * 100)}% done</span>
+          </div>
+        </div>
+
+        {/* ── Card ── */}
+        <div className="glass-card p-5 sm:p-9">
+
+          {/* Step header */}
+          <div className="flex items-start gap-4 mb-7 pb-6 border-b border-white/8">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-saffron/15 border border-saffron/25 flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
+              {currentStep.icon}
+            </div>
+            <div>
+              <p className="text-saffron text-xs font-bold uppercase tracking-widest mb-1">
+                Step {step} — {currentStep.title}
+              </p>
+              <h2 className="font-display font-bold text-lg sm:text-2xl text-white leading-snug">
+                {currentStep.subtitle}
+              </h2>
+            </div>
+          </div>
+
+          {/* Step content */}
+          {step === 1 && <Step1 form={form} setForm={setForm} errors={errors} />}
+          {step === 2 && <Step2 form={form} setForm={setForm} errors={errors} />}
+          {step === 3 && <Step3 form={form} setForm={setForm} errors={errors} />}
+
+          {/* ── Navigation ── */}
+          <div className="mt-9 pt-6 border-t border-white/8 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
+
+            <button
+              onClick={handleBack}
+              disabled={step === 1}
+              className="flex items-center justify-center gap-2 py-3 sm:py-0 text-sm font-semibold text-gray-400
+                         hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors group">
+              <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+              </svg>
+              Back
+            </button>
+
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Step pips */}
+              <div className="flex gap-1.5 mr-1 flex-shrink-0">
+                {STEPS.map((s) => (
+                  <div key={s.id} className={`rounded-full transition-all duration-300
+                    ${s.id === step ? 'w-5 h-1.5 bg-saffron' : s.id < step ? 'w-1.5 h-1.5 bg-saffron/50' : 'w-1.5 h-1.5 bg-white/20'}`}
+                  />
+                ))}
+              </div>
+
+              <button
+                id="next-btn"
+                onClick={handleNext}
+                className="flex-1 sm:flex-none btn-primary py-3.5 sm:py-3 px-7 text-sm font-semibold flex items-center justify-center gap-2 group/btn">
+                {step === total ? (
+                  <><span>Get My Honest Guide</span><span>🎯</span></>
+                ) : (
+                  <><span>Next</span>
+                    <svg className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform"
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                    </svg>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-center text-gray-600 text-xs mt-5">
+          Saved locally · No account needed · Takes 3 minutes
+        </p>
+      </div>
+    </main>
+  )
+}
