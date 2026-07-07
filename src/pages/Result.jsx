@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useLocation, Link } from 'react-router-dom'
+import { supabase } from '../supabaseClient'
+import AuthModal from '../components/AuthModal'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 
 const INCOME_LABELS = {
   'below_2.5L': 'Below ₹2.5 Lakh/yr',
@@ -12,77 +11,36 @@ const INCOME_LABELS = {
   '5L-10L':    '₹5L–₹10L/yr',
   'above_10L': 'Above ₹10L/yr',
 }
-const CITY_LABELS = {
-  same_city: 'Same City',
-  nearby:    'Nearby Cities',
-  anywhere:  'Anywhere in India',
-}
-
-// ─── Gemini call ─────────────────────────────────────────────────────────────
-
-function buildPrompt(form) {
-  const income  = INCOME_LABELS[form.incomeRange] || form.incomeRange || 'Not specified'
-  const cities  = (form.preferredCities || []).map((c) => CITY_LABELS[c] || c).join(', ') || 'Not specified'
-  const firstGen = form.firstGenCollege === true ? 'Yes' : form.firstGenCollege === false ? 'No' : 'Not specified'
-
-  return `You are an honest, caring guide for Indian students after 12th grade. Give REAL, specific advice. Not generic. Not motivational fluff.
-
-Student: Board: ${form.board || 'Not specified'}, Stream: ${form.stream || 'Not specified'}, Marks: ${form.marks || 'Not specified'}%, State: ${form.state || 'Not specified'}, Income: ${income}, First gen: ${firstGen}, Preferred study location: ${cities}, Interests: ${form.interests || 'Not specified'}, Biggest fear: ${form.biggestFear || 'Not specified'}
-
-Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw JSON):
-{
-  "summary": "A warm, honest 2-3 sentence summary of this student's situation and what makes their path unique. Be specific to their actual marks and stream.",
-  "options": [
-    {
-      "path": "Career / course path name",
-      "honest_take": "2-3 sentences of brutally honest, specific advice about this path for THIS student given their marks, income, and stream. No fluff.",
-      "realistic_colleges": ["List 3-4 actual Indian colleges/institutions realistic for their marks and state"],
-      "avg_yearly_cost": "Realistic total yearly cost in INR (tuition + hostel + misc) as a range",
-      "opens_doors_to": ["3-4 specific career roles or further study options this path leads to"],
-      "watch_out_for": "One specific, honest warning about this path — what most people don't tell you"
-    }
-  ],
-  "scholarship_to_check": "Name one specific, real scholarship or scheme this student should look up immediately, with a sentence about eligibility.",
-  "one_thing_to_do_this_week": "One concrete, specific action they can take in the next 7 days. Not vague. Not 'research your options'. Something real."
-}
-
-Give 2-3 options. Make them genuinely different from each other. Be honest about costs — Indian parents underestimate them.`
-}
+// ─── Backend API call ─────────────────────────────────────────────────────────
 
 async function callGemini(form) {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-  if (!apiKey) throw new Error('NO_API_KEY')
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers = { 'Content-Type': 'application/json' }
+  if (session) {
+    headers['Authorization'] = `Bearer ${session.access_token}`
+  }
 
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const res = await fetch('http://localhost:5000/api/guidance', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: buildPrompt(form) }] }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json',
-      },
-    }),
+    headers,
+    body: JSON.stringify({ formData: form }),
   })
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    const msg = err?.error?.message || `HTTP ${res.status}`
+    if (res.status === 401 && err?.error === 'NO_API_KEY') {
+      throw new Error('NO_API_KEY')
+    }
+    const msg = err?.message || err?.error || `HTTP ${res.status}`
     throw new Error(msg)
   }
 
-  const data = await res.json()
-  const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-
-  // Strip markdown fences if model ignored the instruction
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  return JSON.parse(cleaned)
+  return await res.json()
 }
 
 // ─── Micro-components ────────────────────────────────────────────────────────
 
-function Spinner() {
+export function Spinner() {
   return (
     <div className="flex flex-col items-center justify-center gap-6 py-20">
       {/* Animated rings */}
@@ -109,7 +67,7 @@ function Spinner() {
   )
 }
 
-function NoApiKey() {
+export function NoApiKey() {
   return (
     <div className="glass-card p-8 text-center border-amber-500/30">
       <div className="text-5xl mb-4">🔑</div>
@@ -133,7 +91,7 @@ function NoApiKey() {
   )
 }
 
-function ErrorCard({ message, onRetry }) {
+export function ErrorCard({ message, onRetry }) {
   return (
     <div className="glass-card p-8 text-center border-rose-500/25">
       <div className="text-4xl mb-4">⚠️</div>
@@ -157,6 +115,25 @@ function NoFormData() {
       <Link to="/onboarding" className="btn-primary px-8 py-4 text-base inline-block">
         Start the Form →
       </Link>
+    </div>
+  )
+}
+
+// ─── Grounding Badge ─────────────────────────────────────────────────────────
+
+function DataGroundingBadge({ grounded }) {
+  if (grounded) {
+    return (
+      <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        College & scholarship data verified from our database
+      </div>
+    )
+  }
+  return (
+    <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1.5">
+      <span className="text-base leading-none">⚠️</span>
+      AI-estimated college data — verify costs directly with each institution
     </div>
   )
 }
@@ -188,7 +165,7 @@ function SummaryCard({ summary, name }) {
   )
 }
 
-function OptionCard({ option, index }) {
+function OptionCard({ option, index, formData, collegesData }) {
   const colorMap = ['border-blue-500/25', 'border-purple-500/25', 'border-emerald-500/25']
   const accentMap = ['text-blue-400', 'text-purple-400', 'text-emerald-400']
   const bgMap = ['bg-blue-500/8', 'bg-purple-500/8', 'bg-emerald-500/8']
@@ -219,13 +196,30 @@ function OptionCard({ option, index }) {
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">🏫 Realistic Colleges</p>
-          <ul className="space-y-1.5">
-            {(option.realistic_colleges || []).map((c, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="text-saffron mt-0.5 text-xs flex-shrink-0">▸</span>
-                <span className="text-gray-300 text-sm">{c}</span>
-              </li>
-            ))}
+          <ul className="space-y-2">
+            {(option.realistic_colleges || []).map((c, i) => {
+              const dbEntry = collegesData?.[c]
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-saffron mt-0.5 text-xs flex-shrink-0">▸</span>
+                  {dbEntry?.source_url ? (
+                    <a
+                      href={dbEntry.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-300 text-sm hover:text-saffron transition-colors group flex items-center gap-1"
+                    >
+                      <span>{c}</span>
+                      <svg className="w-3 h-3 text-gray-600 group-hover:text-saffron flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="text-gray-300 text-sm">{c}</span>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
 
@@ -255,11 +249,30 @@ function OptionCard({ option, index }) {
           <p className="text-rose-200 text-sm leading-relaxed">{option.watch_out_for}</p>
         </div>
       </div>
+
+      {/* Roadmap CTA */}
+      <Link
+        to="/roadmap"
+        state={{ option, formData }}
+        className="btn-primary mt-2 py-3.5 text-sm flex items-center justify-center gap-2 group/btn"
+      >
+        <span>View 4-Year Roadmap</span>
+        <svg
+          className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform"
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
     </div>
   )
 }
 
-function ScholarshipBox({ scholarship }) {
+function ScholarshipBox({ scholarship, scholarshipData }) {
+  // If we have verified DB data, use the real application URL; otherwise fall back to text only
+  const applyUrl = scholarshipData?.application_url
+  const deadline = scholarshipData?.deadline_pattern
+
   return (
     <div
       className="rounded-2xl p-6 sm:p-8 flex items-start gap-5 animate-slide-up"
@@ -268,10 +281,27 @@ function ScholarshipBox({ scholarship }) {
       <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-2xl flex-shrink-0">
         🎓
       </div>
-      <div>
+      <div className="flex-1 min-w-0">
         <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-2">Scholarship to Check This Week</p>
         <p className="text-white text-base leading-relaxed font-medium">{scholarship}</p>
-        <p className="text-gray-500 text-xs mt-2">Search this exact name on the National Scholarship Portal (scholarships.gov.in)</p>
+        {deadline && (
+          <p className="text-gray-500 text-xs mt-1">⏰ Deadline: {deadline}</p>
+        )}
+        {applyUrl ? (
+          <a
+            href={applyUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:border-emerald-400/40 rounded-lg px-3 py-1.5 transition-all"
+          >
+            Apply / Learn More
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        ) : (
+          <p className="text-gray-500 text-xs mt-2">Search this exact name on the National Scholarship Portal (scholarships.gov.in)</p>
+        )}
       </div>
     </div>
   )
@@ -301,7 +331,7 @@ function OneActionBox({ action }) {
 
 // ─── Student profile pill strip ───────────────────────────────────────────────
 
-function ProfileStrip({ form }) {
+export function ProfileStrip({ form }) {
   const pills = [
     form.board,
     form.stream,
@@ -326,14 +356,68 @@ function ProfileStrip({ form }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+// ─── Save Results Banner (unauthenticated users) ─────────────────────────────
+
+function SaveResultsBanner({ onSave }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl px-5 py-4 mb-6 animate-slide-up"
+      style={{ background: 'linear-gradient(135deg, rgba(255,107,0,0.10) 0%, rgba(15,23,42,0.8) 100%)', border: '1px solid rgba(255,107,0,0.25)' }}>
+      <div className="flex items-center gap-3">
+        <span className="text-xl flex-shrink-0">💾</span>
+        <div>
+          <p className="text-white text-sm font-semibold leading-tight">Save your results</p>
+          <p className="text-gray-400 text-xs mt-0.5">Sign in to access these anywhere — even 6 months later.</p>
+        </div>
+      </div>
+      <button
+        onClick={onSave}
+        className="flex-shrink-0 text-xs font-semibold bg-saffron hover:bg-saffron-light text-white px-4 py-2 rounded-xl transition-colors"
+      >
+        Save →
+      </button>
+    </div>
+  )
+}
+
 export default function Result() {
   const { state } = useLocation()
   const savedRaw  = localStorage.getItem('aageKyaFormData')
   const formData  = state?.formData ?? (savedRaw ? JSON.parse(savedRaw) : null)
 
-  const [status,  setStatus]  = useState('idle')   // idle | loading | success | error
-  const [result,  setResult]  = useState(null)
-  const [errorMsg, setErrMsg] = useState('')
+  const [status,   setStatus]   = useState('idle')   // idle | loading | success | error
+  const [result,   setResult]   = useState(null)
+  const [errorMsg, setErrMsg]   = useState('')
+  const [session,  setSession]  = useState(null)
+  const [isAuthOpen, setAuthOpen] = useState(false)
+
+  // Track auth state to know if we should show the save banner
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // On sign-in, silently sync any localStorage results to the database
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (event === 'SIGNED_IN' && newSession && formData && result) {
+        try {
+          await fetch('http://localhost:5000/api/sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${newSession.access_token}`
+            },
+            body: JSON.stringify({ formData, result })
+          })
+          console.log('Synced offline results to Supabase.')
+        } catch (err) {
+          console.error('Failed to sync offline results:', err)
+        }
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [formData, result])
 
   const fetchGuidance = useCallback(async () => {
     if (!formData) return
@@ -396,9 +480,25 @@ export default function Result() {
           <ErrorCard message={errorMsg} onRetry={fetchGuidance} />
         )}
 
+        {/* Auth modal */}
+        <AuthModal
+          isOpen={isAuthOpen}
+          onClose={() => setAuthOpen(false)}
+        />
+
         {/* Success */}
         {status === 'success' && result && (
           <div className="space-y-6">
+
+            {/* Save results nudge for guests */}
+            {!session && (
+              <SaveResultsBanner onSave={() => setAuthOpen(true)} />
+            )}
+
+            {/* Data grounding badge */}
+            <div className="flex justify-end">
+              <DataGroundingBadge grounded={result.grounded} />
+            </div>
 
             {/* 1 — Summary */}
             <SummaryCard
@@ -408,12 +508,12 @@ export default function Result() {
 
             {/* 2 — Options */}
             {(result.options || []).map((opt, i) => (
-              <OptionCard key={i} option={opt} index={i} />
+              <OptionCard key={i} option={opt} index={i} formData={formData} collegesData={result.colleges_data} />
             ))}
 
             {/* 3 — Scholarship */}
             {result.scholarship_to_check && (
-              <ScholarshipBox scholarship={result.scholarship_to_check} />
+              <ScholarshipBox scholarship={result.scholarship_to_check} scholarshipData={result.scholarship_data} />
             )}
 
             {/* 4 — One action */}
@@ -457,7 +557,10 @@ export default function Result() {
               </div>
 
               <p className="text-center text-gray-700 text-xs">
-                Results are generated by Gemini AI and may not be exhaustive. Always verify college details and costs directly.
+                {result.grounded
+                  ? 'College and scholarship data sourced from our curated database. Costs are estimates — verify directly with each institution before applying.'
+                  : 'Results generated by Gemini AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
+                }
               </p>
             </div>
           </div>

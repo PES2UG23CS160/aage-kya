@@ -6,6 +6,7 @@ import Landing from './pages/Landing'
 import Onboarding from './pages/Onboarding'
 import Result from './pages/Result'
 import Mentors from './pages/Mentors'
+import Roadmap from './pages/Roadmap'
 
 // Scroll to top on every route change
 function ScrollToTop() {
@@ -26,6 +27,7 @@ function AnimatedRoutes() {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/result"     element={<Result />} />
         <Route path="/mentors"    element={<Mentors />} />
+        <Route path="/roadmap"    element={<Roadmap />} />
       </Routes>
     </div>
   )

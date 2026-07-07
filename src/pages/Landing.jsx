@@ -271,7 +271,7 @@ export default function Landing() {
         <div className="max-w-3xl mx-auto">
           <div className="glass-card p-10 text-center relative overflow-hidden border-saffron/20">
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-saffron/50 to-transparent" />
-            <div className="text-5xl mb-4">"</div>
+            <div className="text-5xl mb-4">&ldquo;</div>
             <blockquote className="text-gray-200 text-lg md:text-xl leading-relaxed mb-6 font-medium">
               I had 72% in boards and didn&apos;t know what to do. My parents wanted engineering,
               but I had no idea what branch or college. Aage Kya showed me options I never knew existed.
@@ -302,7 +302,7 @@ export default function Landing() {
             </h2>
             <p className="text-gray-400 mb-8 text-base md:text-lg max-w-xl mx-auto">
               Takes 3 minutes. Completely free. No login needed.
-              Get a guide that's actually written for <em>your</em> situation.
+              Get a guide that&apos;s actually written for <em>your</em> situation.
             </p>
 
             <Link

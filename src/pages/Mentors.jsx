@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -11,7 +11,8 @@ const MENTORS = [
     degree: 'B.E. Electronics & Communication',
     stream: 'PCB → ECE',
     city: 'Bengaluru',
-    calLink: '#',
+    // TODO: Replace with real link from user once provided
+    calLink: 'https://calendly.com/rahul-s-mentor/20min',
     story:
       'I missed NEET by 8 marks. Ended up in ECE. Here\'s what I wish someone told me.',
     tags: ['NEET dropout', 'Bio to Engineering', 'Career pivot'],
@@ -29,7 +30,8 @@ const MENTORS = [
     degree: 'B.Tech Computer Science',
     stream: 'PCM → CSE',
     city: 'Mangaluru',
-    calLink: '#',
+    // TODO: Replace with real link from user once provided
+    calLink: 'https://calendly.com/priya-m-mentor/20min',
     story:
       'First in my family to leave home for college. It was terrifying. I\'ll tell you exactly what helped.',
     tags: ['First-gen student', 'Hostel life', 'Scholarships'],
@@ -47,7 +49,8 @@ const MENTORS = [
     degree: 'BBA + Certification Finance',
     stream: 'Commerce',
     city: 'Pune',
-    calLink: '#',
+    // TODO: Replace with real link from user once provided
+    calLink: 'https://calendly.com/arjun-k-mentor/20min',
     story:
       'Family wanted CA. I wanted something else. Here\'s how I navigated that conversation.',
     tags: ['Family pressure', 'Commerce', 'Non-CA path'],
@@ -142,6 +145,8 @@ function MentorCard({ mentor, index }) {
         {/* CTA */}
         <a
           href={mentor.calLink}
+          target="_blank"
+          rel="noreferrer"
           className="btn-primary text-sm py-3 text-center flex items-center justify-center gap-2 group/btn"
         >
           <span>Book Free 20-min Call</span>
@@ -162,8 +167,60 @@ function MentorCard({ mentor, index }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Mentors() {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
+  const [volunteerForm, setVolunteerForm] = useState({
+    name: '',
+    email: '',
+    college: '',
+    degree: '',
+    stream: '',
+    story: '',
+  })
+  const [errors, setErrors] = useState({})
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setVolunteerForm((prev) => ({ ...prev, [name]: value }))
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: '' }))
+    }
+  }
+
+  const validateForm = () => {
+    const tempErrors = {}
+    if (!volunteerForm.name.trim()) tempErrors.name = 'Please enter your name.'
+    
+    if (!volunteerForm.email.trim()) {
+      tempErrors.email = 'Please enter your email.'
+    } else if (!/\S+@\S+\.\S+/.test(volunteerForm.email)) {
+      tempErrors.email = 'Please enter a valid email address.'
+    }
+    
+    if (!volunteerForm.college.trim()) tempErrors.college = 'Please enter your college name.'
+    if (!volunteerForm.degree.trim()) tempErrors.degree = 'Please enter your degree/course.'
+    if (!volunteerForm.stream.trim()) tempErrors.stream = 'e.g. PCM to CSE, PCB to ECE, Commerce.'
+    if (!volunteerForm.story.trim()) tempErrors.story = 'Share a sentence about your path to help students.'
+    
+    setErrors(tempErrors)
+    return Object.keys(tempErrors).length === 0
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (validateForm()) {
+      // Simulate submission success (No backend)
+      setIsSubmitted(true)
+    }
+  }
+
+  const inputClass = (name) =>
+    `w-full bg-navy-800 border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm transition-all duration-200 outline-none focus:ring-2 focus:ring-saffron/40 ${
+      errors[name] ? 'border-rose-500/50 focus:border-rose-500 focus:ring-rose-500/30' : 'border-white/10 hover:border-white/20 focus:border-saffron/60'
+    }`
+
   return (
-    <main className="pt-24 pb-24 min-h-screen px-4 sm:px-6 lg:px-8">
+    <main className="pt-24 pb-24 min-h-screen px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-5xl mx-auto">
 
         {/* ── Header ── */}
@@ -225,11 +282,153 @@ export default function Mentors() {
           <p className="text-gray-500 text-sm mb-3">
             Were you in their position once? Help the next student.
           </p>
-          <button className="btn-outline text-sm px-8 py-3">
+          <button
+            onClick={() => {
+              setIsSubmitted(false)
+              setErrors({})
+              setVolunteerForm({ name: '', email: '', college: '', degree: '', stream: '', story: '' })
+              setIsModalOpen(true)
+            }}
+            className="btn-outline text-sm px-8 py-3"
+          >
             Volunteer as a Mentor →
           </button>
         </div>
       </div>
+
+      {/* ── Volunteer Modal ── */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-lg p-6 sm:p-8 border-saffron/30 relative animate-slide-up shadow-2xl">
+            {/* Close button */}
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors text-2xl"
+              aria-label="Close modal"
+            >
+              &times;
+            </button>
+
+            {!isSubmitted ? (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="text-center mb-6">
+                  <div className="w-12 h-12 rounded-2xl bg-saffron/10 border border-saffron/30 flex items-center justify-center text-2xl mx-auto mb-3">
+                    🙌
+                  </div>
+                  <h2 className="font-display text-2xl font-bold text-white">Volunteer as a Mentor</h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Help post-12th students navigate their career choices honestly.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={volunteerForm.name}
+                      onChange={handleChange}
+                      placeholder="e.g. Rahul Sharma"
+                      className={inputClass('name')}
+                    />
+                    {errors.name && <p className="text-[10px] text-rose-400 mt-1">{errors.name}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1">Email Address *</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={volunteerForm.email}
+                      onChange={handleChange}
+                      placeholder="e.g. rahul@example.com"
+                      className={inputClass('email')}
+                    />
+                    {errors.email && <p className="text-[10px] text-rose-400 mt-1">{errors.email}</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1">Current College *</label>
+                    <input
+                      type="text"
+                      name="college"
+                      value={volunteerForm.college}
+                      onChange={handleChange}
+                      placeholder="e.g. PES University"
+                      className={inputClass('college')}
+                    />
+                    {errors.college && <p className="text-[10px] text-rose-400 mt-1">{errors.college}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1">Degree / Course *</label>
+                    <input
+                      type="text"
+                      name="degree"
+                      value={volunteerForm.degree}
+                      onChange={handleChange}
+                      placeholder="e.g. B.Tech Computer Science"
+                      className={inputClass('degree')}
+                    />
+                    {errors.degree && <p className="text-[10px] text-rose-400 mt-1">{errors.degree}</p>}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Stream Transition *</label>
+                  <input
+                    type="text"
+                    name="stream"
+                    value={volunteerForm.stream}
+                    onChange={handleChange}
+                    placeholder="e.g. PCM to CSE, PCB to ECE, Commerce"
+                    className={inputClass('stream')}
+                  />
+                  {errors.stream && <p className="text-[10px] text-rose-400 mt-1">{errors.stream}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Your Story / Advice (1 sentence) *</label>
+                  <textarea
+                    name="story"
+                    rows="3"
+                    value={volunteerForm.story}
+                    onChange={handleChange}
+                    placeholder="e.g. I wanted to pursue medicine but shifted to engineering, let me share how to survive this shift."
+                    className={`${inputClass('story')} resize-none`}
+                  />
+                  {errors.story && <p className="text-[10px] text-rose-400 mt-1">{errors.story}</p>}
+                </div>
+
+                <div className="pt-2">
+                  <button type="submit" className="w-full btn-primary py-3 text-sm">
+                    Submit Application
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="text-center py-6">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-4xl mx-auto mb-4 animate-bounce">
+                  ✅
+                </div>
+                <h2 className="font-display text-2xl font-bold text-white mb-2">Awesome, {volunteerForm.name}!</h2>
+                <p className="text-gray-300 text-sm leading-relaxed max-w-sm mx-auto mb-6">
+                  Thank you for volunteering to support Indian students. We will review your application and send you an onboarding email at <span className="text-saffron font-medium">{volunteerForm.email}</span> within 3-4 days.
+                </p>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="btn-primary px-8 py-3 text-sm"
+                >
+                  Close Window
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }
