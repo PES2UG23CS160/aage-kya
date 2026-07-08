@@ -8,7 +8,62 @@ dotenv.config()
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ limit: '10mb', extended: true }))
+
+// Structured Logger Middleware
+app.use((req, res, next) => {
+  const start = Date.now()
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start
+    const authHeader = req.headers.authorization ? 'Yes' : 'No'
+    console.log(`[${new Date().toISOString()}] INFO: ${req.method} ${req.originalUrl} from ${ip} - ${res.statusCode} (Latency: ${duration}ms) [Auth: ${authHeader}]`)
+  })
+  
+  next()
+})
+
+// In-Memory Rate Limiter Store
+const rateLimitStore = new Map() // key -> Array of timestamps
+
+function createRateLimiter(limit, windowMs, message) {
+  return (req, res, next) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
+    const key = `${ip}:${req.baseUrl || ''}${req.path}`
+    const now = Date.now()
+    
+    if (!rateLimitStore.has(key)) {
+      rateLimitStore.set(key, [])
+    }
+    
+    let timestamps = rateLimitStore.get(key)
+    timestamps = timestamps.filter(t => now - t < windowMs)
+    rateLimitStore.set(key, timestamps)
+    
+    if (timestamps.length >= limit) {
+      const oldestTimestamp = timestamps[0]
+      const resetTimeMs = windowMs - (now - oldestTimestamp)
+      const resetMinutes = Math.ceil(resetTimeMs / 60000)
+      console.warn(`[${new Date().toISOString()}] WARN: Rate limit hit for ${key}. Limit: ${limit}/${windowMs}ms`)
+      return res.status(429).json({
+        error: 'RATE_LIMIT',
+        message: message || `Too many requests. Please try again in ${resetMinutes} minute(s).`
+      })
+    }
+    
+    timestamps.push(now)
+    next()
+  }
+}
+
+const guidanceLimiter = createRateLimiter(5, 86400000, "You can only generate 5 career guidance reports per day to prevent system abuse. Please try again tomorrow.")
+const roadmapLimiter = createRateLimiter(5, 86400000, "You can only generate 5 career roadmaps per day to prevent system abuse. Please try again tomorrow.")
+const mentorApplyLimiter = createRateLimiter(1, 3600000, "You can only submit one application per hour. Please try again later.")
+const transcribeLimiter = createRateLimiter(15, 3600000, "You have exceeded the transcription rate limit. Please try again in an hour.")
+
+
 
 const PORT = process.env.PORT || 5000
 
@@ -86,7 +141,10 @@ const INCOME_TO_LAKH = {
 // ─── RAG Helpers ──────────────────────────────────────────────────────────────
 
 function isSupabaseConfigured() {
-  return supabaseUrl && !supabaseUrl.includes('your-supabase')
+  return supabaseUrl && 
+         !supabaseUrl.includes('your-supabase') && 
+         !supabaseUrl.includes('your-project-ref') && 
+         supabaseUrl !== 'https://your-project-ref.supabase.co'
 }
 
 // Fetch real colleges for this student from the DB
@@ -353,13 +411,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
 })
 
+const validateGuidanceBody = (req, res, next) => {
+  if (!req.body.formData) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing formData' })
+  }
+  next()
+}
+
 // Guidance Results Endpoint (Phase 3: RAG-grounded)
-app.post('/api/guidance', async (req, res) => {
+app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res) => {
   try {
     const { formData } = req.body
-    if (!formData) {
-      return res.status(400).json({ error: 'Missing formData' })
-    }
+
 
     const authHeader = req.headers.authorization
     const user = await getAuthUser(authHeader)
@@ -461,13 +524,18 @@ app.post('/api/guidance', async (req, res) => {
   }
 })
 
+const validateRoadmapBody = (req, res, next) => {
+  if (!req.body.formData || !req.body.option) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing formData or option' })
+  }
+  next()
+}
+
 // Roadmap Endpoint
-app.post('/api/roadmap', async (req, res) => {
+app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) => {
   try {
     const { formData, option } = req.body
-    if (!formData || !option) {
-      return res.status(400).json({ error: 'Missing formData or option' })
-    }
+
 
     const authHeader = req.headers.authorization
     const user = await getAuthUser(authHeader)
@@ -626,6 +694,166 @@ app.get('/api/analytics', async (req, res) => {
   }
 })
 
+// ─── Mentors Endpoints (Phase 4 — Real Mentor Connect) ──────────────────────────
+
+
+const HARDCODED_MENTORS = [
+  {
+    id: 'fallback-1',
+    name: 'Rahul S.',
+    initials: 'RS',
+    college: 'PES University',
+    degree: 'B.E. Electronics & Communication',
+    stream: 'PCB → ECE',
+    stream_category: 'Science (PCB)',
+    city: 'Bengaluru',
+    cal_link: 'https://calendly.com/rahul-s-mentor/20min',
+    story: "I missed NEET by 8 marks. Ended up in ECE. Here's what I wish someone told me.",
+    tags: ['NEET dropout', 'Bio to Engineering', 'Career pivot'],
+    gradient: 'from-blue-500/30 to-blue-600/10',
+    border: 'border-blue-500/25',
+    tag_color: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+    initials_bg: 'bg-blue-500/20 text-blue-300',
+    available: true,
+  },
+  {
+    id: 'fallback-2',
+    name: 'Priya M.',
+    initials: 'PM',
+    college: 'NIT Surathkal',
+    degree: 'B.Tech Computer Science',
+    stream: 'PCM → CSE',
+    stream_category: 'Science (PCM)',
+    city: 'Mangaluru',
+    cal_link: 'https://calendly.com/priya-m-mentor/20min',
+    story: "First in my family to leave home for college. It was terrifying. I'll tell you exactly what helped.",
+    tags: ['First-gen student', 'Hostel life', 'Scholarships'],
+    gradient: 'from-purple-500/30 to-purple-600/10',
+    border: 'border-purple-500/25',
+    tag_color: 'bg-purple-500/10 text-purple-300 border-purple-500/20',
+    initials_bg: 'bg-purple-500/20 text-purple-300',
+    available: true,
+  },
+  {
+    id: 'fallback-3',
+    name: 'Arjun K.',
+    initials: 'AK',
+    college: 'Manipal University',
+    degree: 'BBA + Certification Finance',
+    stream: 'Commerce',
+    stream_category: 'Commerce',
+    city: 'Pune',
+    cal_link: 'https://calendly.com/arjun-k-mentor/20min',
+    story: "Family wanted CA. I wanted something else. Here's how I navigated that conversation.",
+    tags: ['Family pressure', 'Commerce', 'Non-CA path'],
+    gradient: 'from-emerald-500/30 to-emerald-600/10',
+    border: 'border-emerald-500/25',
+    tag_color: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+    initials_bg: 'bg-emerald-500/20 text-emerald-300',
+    available: true,
+  },
+]
+
+// Fetch active mentors list
+app.get('/api/mentors', async (req, res) => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.json(HARDCODED_MENTORS)
+    }
+
+    const { data, error } = await supabase
+      .from('mentors')
+      .select('*')
+      .eq('available', true)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    if (!data || data.length === 0) {
+      return res.json(HARDCODED_MENTORS)
+    }
+
+    res.json(data)
+  } catch (err) {
+    console.warn('Mentors API error, returning fallback:', err.message)
+    res.json(HARDCODED_MENTORS)
+  }
+})
+
+const validateApplyBody = (req, res, next) => {
+  const { name, email, college, degree, stream, story } = req.body
+  if (!name || !email || !college || !degree || !stream || !story) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing required fields' })
+  }
+  next()
+}
+
+app.post('/api/mentors/apply', validateApplyBody, mentorApplyLimiter, async (req, res) => {
+  try {
+    const { name, email, college, degree, stream, story } = req.body
+
+
+    if (!supabaseAdmin || !isSupabaseConfigured()) {
+      console.warn(`Volunteer signup simulated for ${name} (${email}) - Supabase not fully configured`)
+      return res.json({ success: true, simulated: true })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('mentor_applications')
+      .insert({
+        name,
+        email,
+        college,
+        degree,
+        stream_transition: stream,
+        story,
+        status: 'pending'
+      })
+
+    if (error) throw error
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Mentor application error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// Transcription Endpoint (Phase 7 — Voice Input)
+app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
+  try {
+    const { audio, mimeType } = req.body
+    if (!audio) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing audio data' })
+    }
+
+    const client = getGeminiClient()
+    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+    const audioPart = {
+      inlineData: {
+        data: audio,
+        mimeType: mimeType || 'audio/webm'
+      }
+    }
+
+    const prompt = "Transcribe this audio precisely. If the spoken language is Hindi, Kannada, Tamil, Telugu, or any other Indian regional language, translate it directly into English. Output only the English translation/transcription text, with absolutely no notes, meta commentary, or extra text."
+
+    const result = await model.generateContent([prompt, audioPart])
+    const text = result.response.text().trim()
+
+    res.json({ transcription: text })
+  } catch (err) {
+    console.error('Transcription API Error:', err.message)
+    if (err.message === 'NO_API_KEY') {
+      res.status(401).json({ error: 'NO_API_KEY', message: 'API Key is missing' })
+    } else {
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+    }
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`)
 })
+

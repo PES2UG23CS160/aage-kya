@@ -175,3 +175,53 @@ DROP POLICY IF EXISTS "scholarships_public_read" ON public.scholarships;
 CREATE POLICY "scholarships_public_read"
   ON public.scholarships FOR SELECT USING (true);
 
+-- ─── 10. Mentors Table (Phase 4 — Real Mentor Connect) ───────────
+-- Public SELECT — no auth required.
+-- Insert/Update/Delete restricted to service role key.
+
+CREATE TABLE IF NOT EXISTS public.mentors (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT        NOT NULL,
+  initials        TEXT        NOT NULL,
+  college         TEXT        NOT NULL,
+  degree          TEXT        NOT NULL,
+  stream          TEXT        NOT NULL,                      -- e.g. "PCB → ECE"
+  stream_category TEXT        NOT NULL,                      -- e.g. "Science (PCB)" (for matching)
+  city            TEXT        NOT NULL,
+  cal_link        TEXT        NOT NULL DEFAULT '#',
+  story           TEXT        NOT NULL,
+  tags            TEXT[]      NOT NULL DEFAULT '{}',
+  gradient        TEXT        NOT NULL DEFAULT 'from-blue-500/30 to-blue-600/10',
+  border          TEXT        NOT NULL DEFAULT 'border-blue-500/25',
+  tag_color       TEXT        NOT NULL DEFAULT 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+  initials_bg     TEXT        NOT NULL DEFAULT 'bg-blue-500/20 text-blue-300',
+  available       BOOLEAN     NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_mentors_stream_category ON public.mentors (stream_category);
+CREATE INDEX IF NOT EXISTS idx_mentors_tags ON public.mentors USING GIN (tags);
+
+ALTER TABLE public.mentors ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "mentors_public_read" ON public.mentors;
+CREATE POLICY "mentors_public_read"
+  ON public.mentors FOR SELECT USING (true);
+
+-- ─── 11. Mentor Applications Table (Phase 4 — Volunteer pipeline) ───
+-- RLS enabled. No public policies. Only readable/writable by admin client via service role key.
+
+CREATE TABLE IF NOT EXISTS public.mentor_applications (
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              TEXT        NOT NULL,
+  email             TEXT        NOT NULL,
+  college           TEXT        NOT NULL,
+  degree            TEXT        NOT NULL,
+  stream_transition TEXT        NOT NULL,
+  story             TEXT        NOT NULL,
+  status            TEXT        NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+ALTER TABLE public.mentor_applications ENABLE ROW LEVEL SECURITY;
+
+

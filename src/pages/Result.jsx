@@ -379,6 +379,48 @@ function SaveResultsBanner({ onSave }) {
   )
 }
 
+// ─── Mentor Teaser Box (Phase 4 — Real Mentor Connect) ───────────────────────
+
+function MentorTeaserBox({ mentor }) {
+  if (!mentor) return null
+
+  // Ensure matching styling tags / colors
+  const gradient = mentor.gradient || 'from-blue-500/30 to-blue-600/10'
+  const border = mentor.border || 'border-blue-500/25'
+  const initialsBg = mentor.initials_bg || 'bg-blue-500/20 text-blue-300'
+
+  return (
+    <div
+      className={`glass-card p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-6 animate-slide-up border ${border}`}
+      style={{ background: `linear-gradient(135deg, rgba(255,107,0,0.06) 0%, rgba(15,23,42,0.8) 100%)` }}
+    >
+      <div className={`w-16 h-16 rounded-2xl ${initialsBg} flex items-center justify-center font-display font-bold text-xl flex-shrink-0 border border-current/10`}>
+        {mentor.initials}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-saffron text-xs font-bold uppercase tracking-widest mb-1">Recommended Mentor For You</p>
+        <h4 className="text-white text-lg font-display font-bold leading-tight">{mentor.name}</h4>
+        <p className="text-gray-400 text-xs mt-0.5">{mentor.degree} · {mentor.college}</p>
+        <p className="text-gray-300 text-sm mt-2.5 leading-relaxed italic">&ldquo;{mentor.story}&rdquo;</p>
+      </div>
+      <div className="w-full sm:w-auto flex-shrink-0 pt-2 sm:pt-0">
+        <a
+          href={mentor.cal_link}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-primary py-3 px-6 text-sm flex items-center justify-center gap-2 group/btn w-full sm:w-auto text-center"
+        >
+          <span>Book Free Call</span>
+          <svg className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </a>
+        <p className="text-center text-gray-600 text-[10px] mt-1.5">20 min · Completely free</p>
+      </div>
+    </div>
+  )
+}
+
 export default function Result() {
   const { state } = useLocation()
   const savedRaw  = localStorage.getItem('aageKyaFormData')
@@ -389,6 +431,7 @@ export default function Result() {
   const [errorMsg, setErrMsg]   = useState('')
   const [session,  setSession]  = useState(null)
   const [isAuthOpen, setAuthOpen] = useState(false)
+  const [matchedMentor, setMatchedMentor] = useState(null)
 
   // Track auth state to know if we should show the save banner
   useEffect(() => {
@@ -396,6 +439,25 @@ export default function Result() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => subscription.unsubscribe()
   }, [])
+
+  // Match a mentor based on student stream
+  useEffect(() => {
+    if (!formData?.stream) return
+    fetch('http://localhost:5000/api/mentors')
+      .then((res) => {
+        if (!res.ok) throw new Error('API failed')
+        return res.json()
+      })
+      .then((data) => {
+        const match = data.find((m) => m.stream_category === formData.stream && m.available)
+        if (match) {
+          setMatchedMentor(match)
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to fetch matched mentor:', err)
+      })
+  }, [formData])
 
   // On sign-in, silently sync any localStorage results to the database
   useEffect(() => {
@@ -516,6 +578,11 @@ export default function Result() {
               <ScholarshipBox scholarship={result.scholarship_to_check} scholarshipData={result.scholarship_data} />
             )}
 
+            {/* 3.5 — Recommended Mentor Connect */}
+            {matchedMentor && (
+              <MentorTeaserBox mentor={matchedMentor} />
+            )}
+
             {/* 4 — One action */}
             {result.one_thing_to_do_this_week && (
               <OneActionBox action={result.one_thing_to_do_this_week} />
@@ -523,19 +590,19 @@ export default function Result() {
 
             {/* ── Bottom CTA ── */}
             <div className="pt-4 space-y-4">
-              <div className="glass-card p-7 text-center border-saffron/20">
+              <div className="glass-card p-7 text-center border-white/10">
                 <p className="text-gray-300 text-base mb-2 font-medium">
-                  Still confused? A real mentor can answer your specific questions.
+                  Want to speak to other seniors who figured it out?
                 </p>
                 <p className="text-gray-500 text-sm mb-6">
-                  Free 30-min call · No pitch · Just honest advice from someone who&apos;s been there
+                  Browse our directory of volunteer mentors across engineering, medicine, commerce, and arts.
                 </p>
                 <Link
                   to="/mentors"
                   id="mentor-cta"
-                  className="btn-primary px-10 py-4 text-base inline-block"
+                  className="btn-outline px-10 py-3 text-sm inline-block"
                 >
-                  Talk to a Mentor →
+                  Browse All Mentors →
                 </Link>
               </div>
 

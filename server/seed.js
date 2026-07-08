@@ -367,6 +367,61 @@ const SCHOLARSHIPS = [
   },
 ]
 
+// ─── MENTORS DATA ─────────────────────────────────────────────────────────────
+const MENTORS = [
+  {
+    name: 'Rahul S.',
+    initials: 'RS',
+    college: 'PES University',
+    degree: 'B.E. Electronics & Communication',
+    stream: 'PCB → ECE',
+    stream_category: 'Science (PCB)',
+    city: 'Bengaluru',
+    cal_link: 'https://calendly.com/rahul-s-mentor/20min',
+    story: "I missed NEET by 8 marks. Ended up in ECE. Here's what I wish someone told me.",
+    tags: ['NEET dropout', 'Bio to Engineering', 'Career pivot'],
+    gradient: 'from-blue-500/30 to-blue-600/10',
+    border: 'border-blue-500/25',
+    tag_color: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+    initials_bg: 'bg-blue-500/20 text-blue-300',
+    available: true,
+  },
+  {
+    name: 'Priya M.',
+    initials: 'PM',
+    college: 'NIT Surathkal',
+    degree: 'B.Tech Computer Science',
+    stream: 'PCM → CSE',
+    stream_category: 'Science (PCM)',
+    city: 'Mangaluru',
+    cal_link: 'https://calendly.com/priya-m-mentor/20min',
+    story: "First in my family to leave home for college. It was terrifying. I'll tell you exactly what helped.",
+    tags: ['First-gen student', 'Hostel life', 'Scholarships'],
+    gradient: 'from-purple-500/30 to-purple-600/10',
+    border: 'border-purple-500/25',
+    tag_color: 'bg-purple-500/10 text-purple-300 border-purple-500/20',
+    initials_bg: 'bg-purple-500/20 text-purple-300',
+    available: true,
+  },
+  {
+    name: 'Arjun K.',
+    initials: 'AK',
+    college: 'Manipal University',
+    degree: 'BBA + Certification Finance',
+    stream: 'Commerce',
+    stream_category: 'Commerce',
+    city: 'Pune',
+    cal_link: 'https://calendly.com/arjun-k-mentor/20min',
+    story: "Family wanted CA. I wanted something else. Here's how I navigated that conversation.",
+    tags: ['Family pressure', 'Commerce', 'Non-CA path'],
+    gradient: 'from-emerald-500/30 to-emerald-600/10',
+    border: 'border-emerald-500/25',
+    tag_color: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+    initials_bg: 'bg-emerald-500/20 text-emerald-300',
+    available: true,
+  },
+]
+
 // ─── Seed Functions ───────────────────────────────────────────────────────────
 
 async function seedColleges() {
@@ -411,6 +466,27 @@ async function seedScholarships() {
   console.log(`\n  ✅ ${upserted} scholarships upserted, ${errors} errors`)
 }
 
+async function seedMentors() {
+  console.log(`\n👥 Seeding ${MENTORS.length} mentors...`)
+  let upserted = 0, errors = 0
+
+  for (const mentor of MENTORS) {
+    const { error } = await supabase
+      .from('mentors')
+      .upsert(mentor, { onConflict: 'name' }) // Supposing name is unique for seeds
+
+    if (error) {
+      console.error(`  ❌ ${mentor.name}: ${error.message}`)
+      errors++
+    } else {
+      upserted++
+      process.stdout.write('.')
+    }
+  }
+
+  console.log(`\n  ✅ ${upserted} mentors upserted, ${errors} errors`)
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -427,8 +503,9 @@ async function main() {
 
   await seedColleges()
   await seedScholarships()
+  await seedMentors()
 
-  console.log('\n✅ Seed complete! Your RAG data is ready.')
+  console.log('\n✅ Seed complete! Your RAG and Mentor data is ready.')
   console.log('   Restart the server and test GET /api/health to confirm.')
 }
 
@@ -436,3 +513,4 @@ main().catch((err) => {
   console.error('Fatal error:', err)
   process.exit(1)
 })
+

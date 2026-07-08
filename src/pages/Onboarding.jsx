@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -324,18 +324,162 @@ function Step2({ form, setForm, errors }) {
   )
 }
 
-// ─── Step 3 ───────────────────────────────────────────────────────────────────
+// ─── Voice Input Button (Phase 7 — Voice Input) ──────────────────────────────
+
+function VoiceInputButton({ onTranscribe, isTranscribing }) {
+  const [recording, setRecording] = useState(false)
+  const [mediaRecorder, setMediaRecorder] = useState(null)
+  const [timer, setTimer] = useState(0)
+  const [timerInterval, setTimerInterval] = useState(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerInterval) clearInterval(timerInterval)
+    }
+  }, [timerInterval])
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const options = { mimeType: 'audio/webm' }
+      let recorder
+      try {
+        recorder = new MediaRecorder(stream, options)
+      } catch (e) {
+        recorder = new MediaRecorder(stream) // fallback
+      }
+
+      let chunks = []
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data)
+      }
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        chunks = []
+        
+        // Release mic
+        stream.getTracks().forEach(track => track.stop())
+
+        if (audioBlob.size > 0) {
+          const reader = new FileReader()
+          reader.readAsDataURL(audioBlob)
+          reader.onloadend = () => {
+            const base64data = reader.result.split(',')[1]
+            onTranscribe(base64data, audioBlob.type || recorder.mimeType)
+          }
+        }
+      }
+
+      setMediaRecorder(recorder)
+      recorder.start()
+      setRecording(true)
+      
+      setTimer(0)
+      const interval = setInterval(() => {
+        setTimer((prev) => {
+          if (prev >= 29) {
+            clearInterval(interval)
+            recorder.stop()
+            setRecording(false)
+            return 30
+          }
+          return prev + 1
+        })
+      }, 1000)
+      setTimerInterval(interval)
+
+    } catch (err) {
+      console.error('Error starting audio recording:', err)
+      alert('Could not access microphone. Please check permissions in your browser.')
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorder && recording) {
+      mediaRecorder.stop()
+      setRecording(false)
+      if (timerInterval) {
+        clearInterval(timerInterval)
+        setTimerInterval(null)
+      }
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={recording ? stopRecording : startRecording}
+      disabled={isTranscribing}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all duration-200 ${
+        recording
+          ? 'bg-rose-500/10 border-rose-500/30 text-rose-400 animate-pulse'
+          : 'bg-navy-800 border-white/10 text-gray-400 hover:border-saffron/40 hover:text-white'
+      } disabled:opacity-50`}
+    >
+      <span className="text-sm leading-none">{recording ? '⏹️' : '🎤'}</span>
+      <span>{recording ? 'Stop Recording' : 'Speak (Hindi/Tamil/etc.)'}</span>
+      {recording && <span className="font-mono text-[10px] ml-1 text-rose-500 font-bold">{30 - timer}s</span>}
+      {isTranscribing && <span className="text-[10px] text-saffron animate-pulse">Transcribing...</span>}
+    </button>
+  )
+}
 
 function Step3({ form, setForm, errors }) {
   const MAX = 500
   const set = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value.slice(0, MAX) }))
 
+  const [transcribingInterests, setTranscribingInterests] = useState(false)
+  const [transcribingFear, setTranscribingFear] = useState(false)
+
+  const handleTranscribe = (field) => async (base64data, mimeType) => {
+    if (field === 'interests') setTranscribingInterests(true)
+    else setTranscribingFear(true)
+
+    try {
+      const res = await fetch('http://localhost:5000/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64data, mimeType })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.message || err.error || 'Transcription failed')
+      }
+
+      const data = await res.json()
+      if (data.transcription) {
+        setForm((prev) => {
+          const currentVal = prev[field] ? prev[field] + ' ' : ''
+          return {
+            ...prev,
+            [field]: (currentVal + data.transcription).slice(0, MAX)
+          }
+        })
+      }
+    } catch (err) {
+      console.error('Transcription error:', err)
+      alert(err.message || 'Could not transcribe speech. Please try typing instead.')
+    } finally {
+      if (field === 'interests') setTranscribingInterests(false)
+      else setTranscribingFear(false)
+    }
+  }
+
   return (
     <div className="space-y-7">
 
       <div>
-        <Label required>What are you actually interested in?</Label>
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-1.5">
+          <Label required>What are you actually interested in?</Label>
+          <VoiceInputButton
+            onTranscribe={handleTranscribe('interests')}
+            isTranscribing={transcribingInterests}
+          />
+        </div>
         <Hint>Hobbies, things you google at 2am, subjects you liked, stuff you do for fun — literally anything. There are no wrong answers here.</Hint>
         <textarea
           id="interests" rows={4}
@@ -352,7 +496,13 @@ function Step3({ form, setForm, errors }) {
       </div>
 
       <div>
-        <Label required>What is your biggest fear about what comes next?</Label>
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-1.5">
+          <Label required>What is your biggest fear about what comes next?</Label>
+          <VoiceInputButton
+            onTranscribe={handleTranscribe('biggestFear')}
+            isTranscribing={transcribingFear}
+          />
+        </div>
         <Hint>Be honest. This helps us give you real advice, not generic stuff. Your answer stays private — we don&apos;t share it with anyone.</Hint>
         <textarea
           id="biggestFear" rows={4}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -64,12 +64,20 @@ const MENTORS = [
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function MentorCard({ mentor, index }) {
+function MentorCard({ mentor, index, isBestMatch }) {
   return (
     <div
-      className={`glass-card flex flex-col hover:scale-[1.02] transition-all duration-300 overflow-hidden group animate-slide-up`}
+      className={`glass-card flex flex-col hover:scale-[1.02] transition-all duration-300 overflow-hidden group animate-slide-up relative ${
+        isBestMatch ? 'border-saffron/60 shadow-lg shadow-saffron/5 scale-[1.01]' : ''
+      }`}
       style={{ animationDelay: `${index * 120}ms` }}
     >
+      {/* Best Match Badge */}
+      {isBestMatch && (
+        <div className="absolute top-3 right-3 bg-saffron text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md shadow-md z-10">
+          ⭐ Best Match
+        </div>
+      )}
       {/* Top gradient strip */}
       <div className={`h-1 w-full bg-gradient-to-r ${mentor.gradient} opacity-80`} />
 
@@ -166,9 +174,48 @@ function MentorCard({ mentor, index }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ─── Triage Concerns (Phase 7 — Situational Matching) ───────────────────────
+
+const CONCERNS = [
+  {
+    id: 'neet',
+    label: 'NEET/JEE Prep Hurdles 📚',
+    desc: 'Missed cutoffs, drop years, or pivoting streams',
+    stream_category: 'Science (PCB)',
+    tag: 'NEET dropout'
+  },
+  {
+    id: 'first-gen',
+    label: 'First-Gen Student / Hostel Adjustments 🏠',
+    desc: 'Leaving home or managing college culture shock',
+    stream_category: 'Science (PCM)',
+    tag: 'First-gen student'
+  },
+  {
+    id: 'family',
+    label: 'Family Pressure / Choosing Career Path 👨‍👩‍👧‍👦',
+    desc: 'Choosing a path different from expectations or parent desires',
+    stream_category: 'Commerce',
+    tag: 'Family pressure'
+  },
+  {
+    id: 'all',
+    label: 'Explore All Mentors / General Guidance 🌟',
+    desc: 'Browse and search our entire mentor roster',
+    stream_category: 'All',
+    tag: null
+  }
+]
+
 export default function Mentors() {
+  const [mentorsList, setMentorsList] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activeFilter, setActiveFilter] = useState('All')
+  const [activeConcern, setActiveConcern] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [volunteerForm, setVolunteerForm] = useState({
     name: '',
     email: '',
@@ -178,6 +225,23 @@ export default function Mentors() {
     story: '',
   })
   const [errors, setErrors] = useState({})
+
+  useEffect(() => {
+    fetch('http://localhost:5000/api/mentors')
+      .then((res) => {
+        if (!res.ok) throw new Error('API failed')
+        return res.json()
+      })
+      .then((data) => {
+        setMentorsList(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.warn('Could not fetch mentors from API, using fallbacks:', err)
+        setMentorsList(MENTORS)
+        setLoading(false)
+      })
+  }, [])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -206,13 +270,66 @@ export default function Mentors() {
     return Object.keys(tempErrors).length === 0
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (validateForm()) {
-      // Simulate submission success (No backend)
+    if (!validateForm()) return
+
+    setSubmitting(true)
+    setSubmitError('')
+
+    try {
+      const res = await fetch('http://localhost:5000/api/mentors/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(volunteerForm)
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.message || err.error || 'Failed to submit application')
+      }
+
       setIsSubmitted(true)
+    } catch (err) {
+      console.error('Submission error:', err.message)
+      setSubmitError(err.message || 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
+
+  const matchesConcern = (mentor, concernId) => {
+    if (!concernId || concernId === 'all') return false
+    const selectedConcernObj = CONCERNS.find(c => c.id === concernId)
+    if (!selectedConcernObj) return false
+    const streamMatches = mentor.stream_category === selectedConcernObj.stream_category
+    const tagMatches = selectedConcernObj.tag ? (mentor.tags || []).includes(selectedConcernObj.tag) : false
+    return streamMatches || tagMatches
+  }
+
+  const handleConcernSelect = (concern) => {
+    setActiveConcern(concern.id)
+    if (concern.id !== 'all') {
+      setActiveFilter('All')
+    }
+  }
+
+  const resetConcern = () => {
+    setActiveConcern(null)
+  }
+
+  const filteredMentors = mentorsList.filter((m) => {
+    if (activeConcern && activeConcern !== 'all') {
+      const selectedConcernObj = CONCERNS.find(c => c.id === activeConcern)
+      if (selectedConcernObj) {
+        const streamMatches = m.stream_category === selectedConcernObj.stream_category
+        const tagMatches = selectedConcernObj.tag ? (m.tags || []).includes(selectedConcernObj.tag) : false
+        return streamMatches || tagMatches
+      }
+    }
+    if (activeFilter === 'All') return true
+    return m.stream_category === activeFilter
+  })
 
   const inputClass = (name) =>
     `w-full bg-navy-800 border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm transition-all duration-200 outline-none focus:ring-2 focus:ring-saffron/40 ${
@@ -235,7 +352,7 @@ export default function Mentors() {
         </div>
 
         {/* ── Trust banner ── */}
-        <div className="flex items-start sm:items-center gap-3 bg-saffron/8 border border-saffron/20 rounded-2xl px-5 py-4 mb-12 max-w-2xl mx-auto animate-fade-in">
+        <div className="flex items-start sm:items-center gap-3 bg-saffron/8 border border-saffron/20 rounded-2xl px-5 py-4 mb-8 max-w-2xl mx-auto animate-fade-in">
           <span className="text-2xl flex-shrink-0 mt-0.5 sm:mt-0">🤝</span>
           <div>
             <p className="text-saffron font-semibold text-sm">
@@ -247,12 +364,113 @@ export default function Mentors() {
           </div>
         </div>
 
-        {/* ── Cards grid ── */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
-          {MENTORS.map((mentor, i) => (
-            <MentorCard key={mentor.id} mentor={mentor} index={i} />
+        {/* ── Interactive Concern Triage Flow (Phase 7 — Situational Matching) ── */}
+        <div className="glass-card p-6 sm:p-8 mb-10 max-w-3xl mx-auto border-saffron/20 animate-fade-in">
+          <h2 className="font-display text-lg sm:text-xl font-bold text-white mb-4 text-center">
+            What is your biggest concern or hurdle right now?
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {CONCERNS.map((concern) => {
+              const active = activeConcern === concern.id
+              return (
+                <button
+                  key={concern.id}
+                  type="button"
+                  onClick={() => handleConcernSelect(concern)}
+                  className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-200 ${
+                    active
+                      ? 'bg-saffron/15 border-saffron text-white shadow-md shadow-saffron/20 scale-[1.01]'
+                      : 'bg-navy-800 border-white/10 text-gray-300 hover:border-saffron/30 hover:bg-saffron/5'
+                  }`}
+                >
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-sm text-white">{concern.label}</h3>
+                    <p className="text-xs text-gray-400 mt-1 leading-snug">{concern.desc}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          
+          {activeConcern !== null && activeConcern !== 'all' && (
+            <div className="flex justify-between items-center mt-5 pt-4 border-t border-white/5">
+              <p className="text-xs text-gray-400">
+                Roster filtered to show relevant seniors who overcame this challenge.
+              </p>
+              <button
+                type="button"
+                onClick={resetConcern}
+                className="text-xs text-saffron hover:underline font-semibold"
+              >
+                Clear filter & browse all →
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Filter Bar ── */}
+        <div className="flex flex-wrap justify-center gap-2 mb-10 animate-fade-in">
+          {['All', 'Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities'].map((category) => (
+            <button
+              key={category}
+              onClick={() => setActiveFilter(category)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-200 ${
+                activeFilter === category
+                  ? 'bg-saffron border-saffron text-white shadow-lg shadow-saffron/20'
+                  : 'bg-navy-800 border-white/10 text-gray-400 hover:border-white/20 hover:text-white'
+              }`}
+            >
+              {category}
+            </button>
           ))}
         </div>
+
+        {/* ── Cards grid ── */}
+        {loading ? (
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="glass-card flex flex-col p-6 sm:p-8 gap-5 border-white/5 animate-pulse">
+                <div className="flex items-start gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-white/5 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-white/10 rounded w-2/3" />
+                    <div className="h-4 bg-white/5 rounded w-1/2" />
+                    <div className="h-4 bg-white/5 rounded w-1/3" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-4 bg-white/5 rounded w-1/4" />
+                  <div className="h-4 bg-white/5 rounded w-1/4" />
+                </div>
+                <div className="flex-1 space-y-2 py-2">
+                  <div className="h-4 bg-white/5 rounded w-full" />
+                  <div className="h-4 bg-white/5 rounded w-5/6" />
+                </div>
+                <div className="flex gap-2">
+                  <div className="h-6 bg-white/5 rounded w-12" />
+                  <div className="h-6 bg-white/5 rounded w-16" />
+                </div>
+                <div className="h-10 bg-white/10 rounded-xl w-full mt-2" />
+              </div>
+            ))}
+          </div>
+        ) : filteredMentors.length === 0 ? (
+          <div className="text-center py-12 glass-card max-w-xl mx-auto mb-16 border-white/10">
+            <p className="text-gray-400 text-base mb-1">No mentors found for this stream category.</p>
+            <p className="text-gray-500 text-xs">Try choosing another stream or volunteer to become a mentor!</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            {filteredMentors.map((mentor, i) => (
+              <MentorCard 
+                key={mentor.id} 
+                mentor={mentor} 
+                index={i} 
+                isBestMatch={activeConcern !== null && activeConcern !== 'all' && matchesConcern(mentor, activeConcern)} 
+              />
+            ))}
+          </div>
+        )}
 
         {/* ── What to expect ── */}
         <div className="glass-card p-8 sm:p-10 mb-12 max-w-3xl mx-auto">
@@ -403,9 +621,21 @@ export default function Mentors() {
                   {errors.story && <p className="text-[10px] text-rose-400 mt-1">{errors.story}</p>}
                 </div>
 
+                {submitError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl p-4">
+                    ⚠️ {submitError}
+                  </div>
+                )}
+
                 <div className="pt-2">
-                  <button type="submit" className="w-full btn-primary py-3 text-sm">
-                    Submit Application
+                  <button type="submit" disabled={submitting} className="w-full btn-primary py-3 text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                    {submitting && (
+                      <svg className="animate-spin h-4 w-4 text-current" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                    {submitting ? 'Submitting Application...' : 'Submit Application'}
                   </button>
                 </div>
               </form>
