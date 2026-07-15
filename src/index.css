@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -13,24 +13,29 @@
 
   html {
     scroll-behavior: smooth;
-    /* Prevent horizontal overflow on mobile */
     overflow-x: hidden;
   }
 
   body {
-    background-color: #0F172A;
+    background-color: #0A0F1E;
     color: #F8FAFC;
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
-    /* Slightly larger base font on mobile for readability */
     font-size: 16px;
   }
 
-  /* Bigger tap targets on mobile */
+  /* Tap highlight removal */
   button, a {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Accessible focus rings */
+  :focus-visible {
+    outline: 2px solid #FF6B00;
+    outline-offset: 3px;
+    border-radius: 6px;
   }
 }
 
@@ -38,21 +43,26 @@
   .btn-primary {
     @apply bg-saffron text-white font-semibold px-6 py-3 rounded-xl
            hover:bg-saffron-light transition-all duration-300
-           shadow-lg hover:shadow-saffron/30 hover:scale-105 active:scale-95
-           /* Full-width on mobile, auto on sm+ */
-           w-full sm:w-auto inline-flex items-center justify-center;
+           shadow-lg hover:shadow-saffron hover:scale-105 active:scale-95
+           w-full sm:w-auto inline-flex items-center justify-center gap-2;
   }
 
   .btn-outline {
-    @apply border border-saffron text-saffron font-semibold px-6 py-3 rounded-xl
-           hover:bg-saffron hover:text-white transition-all duration-300
+    @apply border border-saffron/60 text-saffron font-semibold px-6 py-3 rounded-xl
+           hover:bg-saffron hover:text-white hover:border-saffron transition-all duration-300
            hover:scale-105 active:scale-95
-           w-full sm:w-auto inline-flex items-center justify-center;
+           w-full sm:w-auto inline-flex items-center justify-center gap-2;
   }
 
   .glass-card {
-    @apply bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl
-           hover:border-saffron/30 transition-all duration-300;
+    @apply bg-white/[0.04] backdrop-blur-md border border-white/[0.08] rounded-2xl
+           hover:border-saffron/30 hover:bg-white/[0.06] transition-all duration-300
+           shadow-card;
+  }
+
+  .glass-card-solid {
+    @apply bg-navy-800/80 backdrop-blur-md border border-white/[0.08] rounded-2xl
+           transition-all duration-300 shadow-card;
   }
 
   .section-title {
@@ -60,16 +70,50 @@
   }
 
   .gradient-text {
+    @apply bg-gradient-to-r from-saffron via-saffron-light to-amber-400 bg-clip-text text-transparent;
+  }
+
+  .gradient-text-subtle {
     @apply bg-gradient-to-r from-saffron to-saffron-light bg-clip-text text-transparent;
   }
 
   .nav-link {
-    @apply text-gray-400 hover:text-saffron transition-colors duration-200 font-medium text-sm;
+    @apply text-gray-400 hover:text-white transition-colors duration-200 font-medium text-sm;
   }
 
-  /* Microcopy helper text style */
   .field-hint {
     @apply text-gray-500 text-xs mt-1.5 leading-relaxed;
+  }
+
+  /* Loading skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(90deg, #1F2937 25%, #374151 50%, #1F2937 75%);
+    background-size: 1000px 100%;
+    animation: shimmer 2.5s linear infinite;
+  }
+
+  /* Noise texture overlay for depth */
+  .noise-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    pointer-events: none;
+  }
+
+  /* Glow dot indicator */
+  .status-dot {
+    @apply relative flex h-2.5 w-2.5;
+  }
+  .status-dot::before {
+    content: '';
+    @apply animate-ping absolute inline-flex h-full w-full rounded-full bg-saffron opacity-75;
+  }
+  .status-dot::after {
+    content: '';
+    @apply relative inline-flex rounded-full h-2.5 w-2.5 bg-saffron;
   }
 }
 
@@ -77,17 +121,23 @@
   .text-balance {
     text-wrap: balance;
   }
+  .bg-mesh {
+    background-image: radial-gradient(at 27% 37%, hsla(215, 98%, 61%, 0.08) 0px, transparent 50%),
+      radial-gradient(at 97% 21%, hsla(25, 98%, 72%, 0.12) 0px, transparent 50%),
+      radial-gradient(at 52% 99%, hsla(354, 98%, 61%, 0.04) 0px, transparent 50%),
+      radial-gradient(at 10% 29%, hsla(256, 96%, 67%, 0.06) 0px, transparent 50%);
+  }
 }
 
 /* ── Page transition ────────────────────────────────────────────────────────── */
 .page-enter {
-  animation: pageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: pageEnter 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes pageEnter {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -95,32 +145,54 @@
   }
 }
 
+/* ── Shimmer keyframe ────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
 /* ── Custom scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #1E293B;
+  background: #111827;
 }
 ::-webkit-scrollbar-thumb {
-  background: #FF6B00;
+  background: linear-gradient(to bottom, #FF6B00, #FF8C33);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #FF8C33;
 }
 
-/* ── Mobile: increase heading legibility ────────────────────────────────────── */
-@media (max-width: 640px) {
-  h1 { line-height: 1.15; }
-  h2 { line-height: 1.2; }
+/* ── Stagger animation helpers ─────────────────────────────────────────────── */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 80ms; }
+.stagger-3 { animation-delay: 160ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 320ms; }
 
-  /* Ensure textareas don't cause overflow */
+/* ── Slide from right (chat panel) ────────────────────────────────────────── */
+.animate-slide-from-right {
+  animation: slideFromRight 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes slideFromRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+
+/* ── Mobile ─────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  h1 { line-height: 1.12; }
+  h2 { line-height: 1.18; }
+
   textarea {
     max-width: 100%;
   }
 
-  /* Full-width CTAs that are inside flex containers on mobile */
   .cta-group {
     flex-direction: column;
     align-items: stretch;

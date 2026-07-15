@@ -1,99 +1,192 @@
-import { useState, useEffect } from 'react'
-import { NavLink, Link } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
+import { useState, useEffect, useRef } from 'react'
+import { NavLink, Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 
 const navLinks = [
-  { to: '/', label: 'Home' },
+  { to: '/',           label: 'Home' },
   { to: '/onboarding', label: 'Get Started' },
-  { to: '/mentors', label: 'Mentors' },
-  { to: '/result', label: 'My Result' },
+  { to: '/mentors',    label: 'Mentors' },
+  { to: '/result',     label: 'My Result' },
 ]
 
 export default function Navbar() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [session, setSession] = useState(null)
+  const { user, profile, signOut } = useAuth()
+  const [isOpen, setIsOpen]     = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef(null)
+  const navigate = useNavigate()
 
+  // Scroll-aware glass effect
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+    const onScroll = () => setScrolled(window.scrollY > 20)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => subscription.unsubscribe()
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    localStorage.removeItem('aageKyaRoadmap') // Clear roadmap cache on logout
+    setDropdownOpen(false)
+    await signOut()
+    navigate('/')
   }
+
+  const initials = user?.email?.[0]?.toUpperCase() ?? '?'
+  const isMentor = profile?.role === 'mentor'
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-navy/80 backdrop-blur-md border-b border-white/5 font-sans">
+      <nav
+        className={`fixed top-0 left-0 right-0 z-50 font-sans transition-all duration-300 ${
+          scrolled
+            ? 'bg-[#0A0F1E]/92 backdrop-blur-xl border-b border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.4)]'
+            : 'bg-transparent border-b border-transparent'
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
+
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-lg bg-saffron flex items-center justify-center text-white font-bold text-sm font-display group-hover:scale-110 transition-transform duration-200">
+            <Link to="/" className="flex items-center gap-2.5 group">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-saffron to-saffron-dark flex items-center justify-center text-white font-bold text-sm font-display group-hover:scale-110 transition-transform duration-200 shadow-md">
                 AK
               </div>
-              <span className="font-display font-bold text-xl text-saffron group-hover:text-saffron-light transition-colors duration-200">
+              <span className="font-display font-bold text-xl text-white group-hover:text-saffron transition-colors duration-200">
                 Aage Kya?
               </span>
             </Link>
 
             {/* Desktop nav links */}
-            <div className="hidden md:flex items-center gap-8">
+            <div className="hidden md:flex items-center gap-1">
               {navLinks.map((link) => (
                 <NavLink
                   key={link.to}
                   to={link.to}
                   end={link.to === '/'}
                   className={({ isActive }) =>
-                    `nav-link ${isActive ? 'text-saffron font-semibold' : ''}`
+                    `relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      isActive
+                        ? 'text-white bg-white/8'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`
                   }
                 >
-                  {link.label}
+                  {({ isActive }) => (
+                    <>
+                      {link.label}
+                      {isActive && (
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-saffron" />
+                      )}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </div>
 
-            {/* Action buttons (Sign In / Logout) */}
-            <div className="hidden md:flex items-center gap-4">
-              {session ? (
-                <div className="flex items-center gap-4">
-                  <span className="text-gray-400 text-xs truncate max-w-[120px]" title={session.user.email}>
-                    {session.user.email}
-                  </span>
+            {/* Desktop right side */}
+            <div className="hidden md:flex items-center gap-3">
+              {user ? (
+                <div className="relative" ref={dropdownRef}>
                   <button
-                    onClick={handleSignOut}
-                    className="btn-outline text-xs py-2 px-4 hover:scale-100 active:scale-100"
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="flex items-center gap-2.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 transition-all duration-200"
                   >
-                    Sign Out
+                    {/* Avatar */}
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-saffron to-saffron-dark flex items-center justify-center text-white text-xs font-bold">
+                      {initials}
+                    </div>
+                    <span className="text-gray-300 text-xs max-w-[100px] truncate">{user.email}</span>
+                    <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
+
+                  {/* Dropdown */}
+                  {dropdownOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-52 glass-card-solid rounded-xl border border-white/10 overflow-hidden shadow-xl animate-fade-in z-50">
+                      <div className="px-4 py-3 border-b border-white/5">
+                        <p className="text-white text-xs font-semibold truncate">{user.email}</p>
+                        <p className="text-gray-500 text-[10px] mt-0.5 capitalize">
+                          {isMentor ? '🌟 Mentor' : '🎓 Student'}
+                        </p>
+                      </div>
+                      <div className="py-1">
+                        <Link
+                          to="/profile"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          My Profile
+                        </Link>
+                        {isMentor && (
+                          <Link
+                            to="/mentor-dashboard"
+                            onClick={() => setDropdownOpen(false)}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                          >
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            Mentor Dashboard
+                          </Link>
+                        )}
+                        <Link
+                          to="/result"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                          </svg>
+                          My Results
+                        </Link>
+                      </div>
+                      <div className="border-t border-white/5 py-1">
+                        <button
+                          onClick={handleSignOut}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/5 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button
                   onClick={() => setIsAuthOpen(true)}
-                  className="btn-primary text-xs py-2 px-5 hover:scale-105 active:scale-95"
+                  className="btn-primary text-xs py-2 px-5"
                 >
                   Sign In
                 </button>
               )}
             </div>
 
-            {/* Mobile menu toggle */}
+            {/* Mobile toggle */}
             <button
-              className="md:hidden text-gray-400 hover:text-white transition-colors"
+              className="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
               onClick={() => setIsOpen(!isOpen)}
               aria-label="Toggle menu"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {isOpen ? (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 ) : (
@@ -105,7 +198,7 @@ export default function Navbar() {
 
           {/* Mobile menu */}
           {isOpen && (
-            <div className="md:hidden pb-4 border-t border-white/5 mt-2 pt-4 space-y-3 animate-fade-in">
+            <div className="md:hidden pb-4 border-t border-white/5 mt-2 pt-4 space-y-1 animate-fade-in">
               {navLinks.map((link) => (
                 <NavLink
                   key={link.to}
@@ -113,36 +206,38 @@ export default function Navbar() {
                   end={link.to === '/'}
                   onClick={() => setIsOpen(false)}
                   className={({ isActive }) =>
-                    `block px-2 py-2 rounded-lg nav-link ${isActive ? 'text-saffron bg-saffron/10' : ''}`
+                    `block px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      isActive
+                        ? 'text-white bg-saffron/15 border border-saffron/20'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`
                   }
                 >
                   {link.label}
                 </NavLink>
               ))}
-
-              <div className="pt-2 border-t border-white/5 space-y-2">
-                {session ? (
+              <div className="pt-3 border-t border-white/5 space-y-2">
+                {user ? (
                   <>
-                    <div className="text-gray-400 text-xs px-2 truncate">
-                      {session.user.email}
-                    </div>
+                    <Link to="/profile" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
+                      My Profile
+                    </Link>
+                    {isMentor && (
+                      <Link to="/mentor-dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
+                        Mentor Dashboard
+                      </Link>
+                    )}
                     <button
-                      onClick={() => {
-                        setIsOpen(false)
-                        handleSignOut()
-                      }}
-                      className="w-full btn-outline text-sm py-2 px-4"
+                      onClick={() => { setIsOpen(false); handleSignOut() }}
+                      className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-rose-400 hover:bg-rose-500/5 transition-colors"
                     >
                       Sign Out
                     </button>
                   </>
                 ) : (
                   <button
-                    onClick={() => {
-                      setIsOpen(false)
-                      setIsAuthOpen(true)
-                    }}
-                    className="w-full btn-primary text-sm py-2 px-5"
+                    onClick={() => { setIsOpen(false); setIsAuthOpen(true) }}
+                    className="w-full btn-primary text-sm py-2.5"
                   >
                     Sign In
                   </button>
@@ -153,11 +248,7 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* Auth Modal Overlay */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-      />
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </>
   )
 }

@@ -1,13 +1,30 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import Groq from 'groq-sdk'
 import { createClient } from '@supabase/supabase-js'
 
-dotenv.config()
+dotenv.config({ override: true })
 
 const app = express()
-app.use(cors())
+app.set('trust proxy', 1) // Trust first proxy (Railway, Render, Vercel)
+
+// CORS — allow origins from ALLOWED_ORIGINS env var (comma-separated)
+// Falls back to all origins in development
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : null
+
+app.use(cors({
+  origin: allowedOrigins
+    ? (origin, cb) => {
+        // Allow requests with no origin (mobile apps, curl, Postman)
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+        cb(new Error(`CORS: origin ${origin} not allowed`))
+      }
+    : true,
+  credentials: true,
+}))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
@@ -80,13 +97,13 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
     })
   : null
 
-// Initialize Gemini SDK if API key exists
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY
+// Initialize Groq client
+const getGroqClient = () => {
+  const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     throw new Error('NO_API_KEY')
   }
-  return new GoogleGenerativeAI(apiKey)
+  return new Groq({ apiKey })
 }
 
 // User-scoped Supabase client helper to respect Row Level Security (RLS)
@@ -384,21 +401,18 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
 Provide highly specific, actionable, and realistic advice for Indian students. Do not give generic advice. Keep the names of skills and certifications real and relevant.`
 }
 
-// Helper to call Gemini and clean output
+// Helper to call Groq and parse JSON output
 async function callGemini(prompt) {
-  const client = getGeminiClient()
-  const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 2048,
-      responseMimeType: 'application/json',
-    },
+  const client = getGroqClient()
+  const completion = await client.chat.completions.create({
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 2048,
+    response_format: { type: 'json_object' },
   })
 
-  const result = await model.generateContent(prompt)
-  const text = result.response.text()
-
+  const text = completion.choices[0].message.content
   // Clean markdown backticks if model ignores JSON instruction
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   return JSON.parse(cleaned)
@@ -820,6 +834,7 @@ app.post('/api/mentors/apply', validateApplyBody, mentorApplyLimiter, async (req
 })
 
 // Transcription Endpoint (Phase 7 — Voice Input)
+// Uses Groq Whisper (whisper-large-v3) — accepts base64 audio from the client
 app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
   try {
     const { audio, mimeType } = req.body
@@ -827,20 +842,29 @@ app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing audio data' })
     }
 
-    const client = getGeminiClient()
-    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const client = getGroqClient()
 
-    const audioPart = {
-      inlineData: {
-        data: audio,
-        mimeType: mimeType || 'audio/webm'
-      }
-    }
+    // Convert base64 audio to a Buffer and wrap as a File-like object for the Groq SDK
+    const audioBuffer = Buffer.from(audio, 'base64')
+    const ext = (mimeType || 'audio/webm').includes('mp4') ? 'mp4'
+              : (mimeType || '').includes('ogg') ? 'ogg'
+              : 'webm'
+    const filename = `audio.${ext}`
 
-    const prompt = "Transcribe this audio precisely. If the spoken language is Hindi, Kannada, Tamil, Telugu, or any other Indian regional language, translate it directly into English. Output only the English translation/transcription text, with absolutely no notes, meta commentary, or extra text."
+    // Groq SDK accepts a File object — create one from the buffer
+    const audioFile = new File([audioBuffer], filename, { type: mimeType || 'audio/webm' })
 
-    const result = await model.generateContent([prompt, audioPart])
-    const text = result.response.text().trim()
+    const transcriptionResponse = await client.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-large-v3',
+      response_format: 'text',
+      language: 'en', // Whisper auto-detects but we bias toward English output
+    })
+
+    // transcriptionResponse is the raw text string when response_format is 'text'
+    const text = typeof transcriptionResponse === 'string'
+      ? transcriptionResponse.trim()
+      : (transcriptionResponse.text || '').trim()
 
     res.json({ transcription: text })
   } catch (err) {

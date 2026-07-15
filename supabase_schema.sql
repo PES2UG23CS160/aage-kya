@@ -181,7 +181,7 @@ CREATE POLICY "scholarships_public_read"
 
 CREATE TABLE IF NOT EXISTS public.mentors (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            TEXT        NOT NULL,
+  name            TEXT        NOT NULL UNIQUE,
   initials        TEXT        NOT NULL,
   college         TEXT        NOT NULL,
   degree          TEXT        NOT NULL,
@@ -198,6 +198,10 @@ CREATE TABLE IF NOT EXISTS public.mentors (
   available       BOOLEAN     NOT NULL DEFAULT true,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
+
+-- Add unique constraint if the table was already created without it
+ALTER TABLE public.mentors DROP CONSTRAINT IF EXISTS mentors_name_key;
+ALTER TABLE public.mentors ADD CONSTRAINT mentors_name_key UNIQUE (name);
 
 CREATE INDEX IF NOT EXISTS idx_mentors_stream_category ON public.mentors (stream_category);
 CREATE INDEX IF NOT EXISTS idx_mentors_tags ON public.mentors USING GIN (tags);
@@ -224,4 +228,112 @@ CREATE TABLE IF NOT EXISTS public.mentor_applications (
 
 ALTER TABLE public.mentor_applications ENABLE ROW LEVEL SECURITY;
 
+-- Allow anyone to INSERT an application (no account needed to apply)
+DROP POLICY IF EXISTS "mentor_applications_public_insert" ON public.mentor_applications;
+CREATE POLICY "mentor_applications_public_insert"
+  ON public.mentor_applications FOR INSERT WITH CHECK (true);
 
+
+-- ─── 12. Role support for students ───────────────────────────────────────────
+-- Adds a role column so we can distinguish regular students from mentors.
+-- Values: 'student' (default) | 'mentor'
+
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student';
+
+-- ─── 13. Mentor account linkage ───────────────────────────────────────────────
+-- Links a mentor profile row to an auth.users account.
+-- NULL means the mentor hasn't claimed their account yet.
+
+ALTER TABLE public.mentors ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_mentors_user_id ON public.mentors (user_id);
+
+-- Mentors can update their own row (e.g. set availability, update cal_link)
+DROP POLICY IF EXISTS "mentors_self_write" ON public.mentors;
+CREATE POLICY "mentors_self_write"
+  ON public.mentors FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+
+-- ─── 14. Chat Sessions ────────────────────────────────────────────────────────
+-- One session per (student, mentor) pair — unique so we reuse sessions.
+
+CREATE TABLE IF NOT EXISTS public.chat_sessions (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id  UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  mentor_id   UUID        NOT NULL REFERENCES public.mentors(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+  UNIQUE (student_id, mentor_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_student ON public.chat_sessions (student_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_mentor  ON public.chat_sessions (mentor_id);
+
+ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Students can see their own sessions; mentors can see sessions for their mentor profile.
+DROP POLICY IF EXISTS "chat_sessions_participant_read" ON public.chat_sessions;
+CREATE POLICY "chat_sessions_participant_read"
+  ON public.chat_sessions FOR SELECT
+  USING (
+    auth.uid() = student_id
+    OR auth.uid() IN (SELECT user_id FROM public.mentors WHERE id = mentor_id)
+  );
+
+-- Only the student can create a session.
+DROP POLICY IF EXISTS "chat_sessions_student_insert" ON public.chat_sessions;
+CREATE POLICY "chat_sessions_student_insert"
+  ON public.chat_sessions FOR INSERT
+  WITH CHECK (auth.uid() = student_id);
+
+
+-- ─── 15. Chat Messages ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id  UUID        NOT NULL REFERENCES public.chat_sessions(id) ON DELETE CASCADE,
+  sender_id   UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content     TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON public.chat_messages (session_id, created_at);
+
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- Only participants (student or the linked mentor) can read messages.
+DROP POLICY IF EXISTS "chat_messages_participant_read" ON public.chat_messages;
+CREATE POLICY "chat_messages_participant_read"
+  ON public.chat_messages FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.chat_sessions s
+      WHERE s.id = session_id
+        AND (
+          auth.uid() = s.student_id
+          OR auth.uid() IN (SELECT user_id FROM public.mentors WHERE id = s.mentor_id)
+        )
+    )
+  );
+
+-- Only participants can send messages.
+DROP POLICY IF EXISTS "chat_messages_participant_insert" ON public.chat_messages;
+CREATE POLICY "chat_messages_participant_insert"
+  ON public.chat_messages FOR INSERT
+  WITH CHECK (
+    auth.uid() = sender_id
+    AND EXISTS (
+      SELECT 1 FROM public.chat_sessions s
+      WHERE s.id = session_id
+        AND (
+          auth.uid() = s.student_id
+          OR auth.uid() IN (SELECT user_id FROM public.mentors WHERE id = s.mentor_id)
+        )
+    )
+  );
+
+-- Enable Supabase Realtime for chat_messages so clients get live updates.
+-- Run in Supabase SQL editor:
+-- ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_sessions;

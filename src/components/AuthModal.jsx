@@ -1,128 +1,248 @@
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
-  const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(false)
+const TABS = [
+  { id: 'password', label: 'Email & Password' },
+  { id: 'magic',    label: 'Magic Link' },
+]
+
+export default function AuthModal({ isOpen, onClose }) {
+  const [tab, setTab]           = useState('password')   // 'password' | 'magic'
+  const [mode, setMode]         = useState('signin')     // 'signin' | 'signup'
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm]   = useState('')
+  const [loading, setLoading]   = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const [success, setSuccess] = useState(false)
-
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    if (!email.trim()) return
-
-    setLoading(true)
-    setErrorMsg('')
-    setSuccess(false)
-
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: window.location.origin, // Redirects back to the current site
-        },
-      })
-
-      if (error) throw error
-
-      setSuccess(true)
-      if (onAuthSuccess) {
-        onAuthSuccess(email)
-      }
-    } catch (err) {
-      console.error('Auth Error:', err.message)
-      setErrorMsg(err.message || 'Something went wrong. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [success, setSuccess]   = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
 
   if (!isOpen) return null
 
+  const reset = () => {
+    setEmail(''); setPassword(''); setConfirm('')
+    setErrorMsg(''); setSuccess(false); setSuccessMsg('')
+    setLoading(false)
+  }
+
+  const switchTab = (t) => { reset(); setTab(t) }
+  const switchMode = (m) => { reset(); setMode(m) }
+
+  // ── Handlers ──────────────────────────────────────────────
+  const handleMagicLink = async (e) => {
+    e.preventDefault()
+    if (!email.trim()) return setErrorMsg('Please enter your email.')
+    setLoading(true); setErrorMsg('')
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    })
+    setLoading(false)
+    if (error) return setErrorMsg(error.message)
+    setSuccess(true)
+    setSuccessMsg(`Magic link sent to ${email}. Click it to log in!`)
+  }
+
+  const handleEmailPassword = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    if (!email.trim() || !password)
+      return setErrorMsg('Please fill in all fields.')
+
+    if (mode === 'signup') {
+      if (password.length < 6)
+        return setErrorMsg('Password must be at least 6 characters.')
+      if (password !== confirm)
+        return setErrorMsg('Passwords do not match.')
+    }
+
+    setLoading(true)
+    let error
+    if (mode === 'signup') {
+      const { error: e } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      })
+      error = e
+      if (!error) {
+        setSuccess(true)
+        setSuccessMsg(`Account created! Check ${email} for a confirmation link.`)
+      }
+    } else {
+      const { error: e } = await supabase.auth.signInWithPassword({ email, password })
+      error = e
+      if (!error) {
+        onClose()
+        return
+      }
+    }
+    setLoading(false)
+    if (error) setErrorMsg(error.message)
+  }
+
+  // ── Spinner ────────────────────────────────────────────────
+  const Spinner = () => (
+    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  )
+
+  const inputClass = "w-full bg-[#111827] border border-white/10 hover:border-white/20 focus:border-saffron/60 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm transition-all outline-none focus:ring-2 focus:ring-saffron/30"
+
   return (
-    <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
-      <div className="glass-card w-full max-w-md p-6 sm:p-8 border-saffron/30 relative animate-slide-up shadow-2xl">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors text-2xl"
-          aria-label="Close modal"
-        >
-          &times;
-        </button>
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+      <div className="relative w-full max-w-md animate-scale-in">
 
-        {!success ? (
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="text-center mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-saffron/10 border border-saffron/30 flex items-center justify-center text-2xl mx-auto mb-3">
-                ✨
+        {/* Card */}
+        <div className="glass-card border-white/10 p-7 relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-saffron/50 to-transparent" />
+
+          {/* Close */}
+          <button
+            onClick={() => { reset(); onClose() }}
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all"
+            aria-label="Close"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Success state */}
+          {success ? (
+            <div className="text-center py-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-4xl mx-auto mb-4">
+                ✉️
               </div>
-              <h2 className="font-display text-2xl font-bold text-white">Save Your Progress</h2>
-              <p className="text-gray-400 text-sm mt-1">
-                Enter your email to unlock your 4-year roadmap and save your career guidance results.
-              </p>
+              <h2 className="font-display text-2xl font-bold text-white mb-2">Check your email!</h2>
+              <p className="text-gray-300 text-sm leading-relaxed max-w-xs mx-auto mb-6">{successMsg}</p>
+              <button onClick={() => { reset(); onClose() }} className="btn-primary px-8 py-3 text-sm">
+                Done
+              </button>
             </div>
-
-            {errorMsg && (
-              <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3 text-rose-300 text-xs leading-relaxed">
-                ⚠️ {errorMsg}
+          ) : (
+            <>
+              {/* Header */}
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-saffron/10 border border-saffron/30 flex items-center justify-center text-2xl mx-auto mb-3">
+                  {mode === 'signup' ? '🚀' : '✨'}
+                </div>
+                <h2 className="font-display text-2xl font-bold text-white">
+                  {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+                </h2>
+                <p className="text-gray-400 text-sm mt-1">Save your results &amp; chat with mentors</p>
               </div>
-            )}
 
-            <div>
-              <label htmlFor="auth-email" className="block text-xs font-semibold text-gray-300 mb-1.5">
-                Email Address
-              </label>
-              <input
-                id="auth-email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. aditya@gmail.com"
-                className="w-full bg-navy-800 border border-white/10 hover:border-white/20 focus:border-saffron/60 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm transition-all duration-200 outline-none focus:ring-2 focus:ring-saffron/40"
-              />
-            </div>
+              {/* Tab switcher */}
+              <div className="flex bg-white/5 rounded-xl p-1 mb-5">
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => switchTab(t.id)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                      tab === t.id
+                        ? 'bg-saffron text-white shadow-md'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary py-3 text-sm flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <span>Sending Link...</span>
-                </>
-              ) : (
-                <span>Send Magic Link →</span>
+              {/* Error */}
+              {errorMsg && (
+                <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3 text-rose-300 text-xs mb-4 leading-relaxed">
+                  ⚠️ {errorMsg}
+                </div>
               )}
-            </button>
 
-            <p className="text-center text-gray-500 text-[10px] leading-relaxed">
-              We will email you a login link. Clicking it logs you in instantly without a password.
-            </p>
-          </form>
-        ) : (
-          <div className="text-center py-6">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-4xl mx-auto mb-4 animate-bounce">
-              ✉️
-            </div>
-            <h2 className="font-display text-2xl font-bold text-white mb-2">Check Your Email!</h2>
-            <p className="text-gray-300 text-sm leading-relaxed max-w-xs mx-auto mb-6">
-              We have sent a login link to <span className="text-saffron font-semibold">{email}</span>. Click the link in your inbox to complete sign in.
-            </p>
-            <button
-              onClick={onClose}
-              className="btn-primary px-8 py-3 text-sm"
-            >
-              Okay
-            </button>
-          </div>
-        )}
+              {/* ── Magic Link Form ── */}
+              {tab === 'magic' && (
+                <form onSubmit={handleMagicLink} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email Address</label>
+                    <input
+                      type="email" required value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. aditya@gmail.com"
+                      className={inputClass}
+                    />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-sm gap-2 disabled:opacity-60">
+                    {loading ? <Spinner /> : null}
+                    {loading ? 'Sending...' : 'Send Magic Link →'}
+                  </button>
+                  <p className="text-center text-gray-500 text-[10px]">
+                    We'll email you a one-click login link. No password needed.
+                  </p>
+                </form>
+              )}
+
+              {/* ── Email + Password Form ── */}
+              {tab === 'password' && (
+                <form onSubmit={handleEmailPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email Address</label>
+                    <input
+                      type="email" required value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. aditya@gmail.com"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">Password</label>
+                    <input
+                      type="password" required value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                      className={inputClass}
+                    />
+                  </div>
+                  {mode === 'signup' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1.5">Confirm Password</label>
+                      <input
+                        type="password" required value={confirm}
+                        onChange={(e) => setConfirm(e.target.value)}
+                        placeholder="Repeat your password"
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-sm gap-2 disabled:opacity-60">
+                    {loading ? <Spinner /> : null}
+                    {loading
+                      ? (mode === 'signup' ? 'Creating account...' : 'Signing in...')
+                      : (mode === 'signup' ? 'Create Account →' : 'Sign In →')
+                    }
+                  </button>
+
+                  {/* Toggle signup/signin */}
+                  <p className="text-center text-gray-500 text-xs">
+                    {mode === 'signin' ? (
+                      <>Don&apos;t have an account?{' '}
+                        <button type="button" onClick={() => switchMode('signup')} className="text-saffron hover:underline font-semibold">
+                          Sign up free
+                        </button>
+                      </>
+                    ) : (
+                      <>Already have an account?{' '}
+                        <button type="button" onClick={() => switchMode('signin')} className="text-saffron hover:underline font-semibold">
+                          Sign in
+                        </button>
+                      </>
+                    )}
+                  </p>
+                </form>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
