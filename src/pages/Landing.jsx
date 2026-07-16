@@ -244,7 +244,7 @@ export default function Landing() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-saffron" />
             </span>
             <span className="text-saffron text-sm font-semibold tracking-wide">
-              Free for Class 12 students &amp; graduates
+              Free for Class 10 &amp; 12 students &amp; graduates
             </span>
           </div>
 
@@ -293,14 +293,20 @@ export default function Landing() {
             style={{ animationDelay: '200ms' }}
           >
             <Link
-              to="/onboarding"
-              id="hero-cta"
-              className="btn-primary text-base px-8 py-4 animate-pulse-glow font-semibold tracking-wide"
+              to="/class10/onboarding"
+              id="hero-cta-10"
+              className="btn-primary text-base px-8 py-4 animate-pulse-glow font-semibold tracking-wide flex items-center gap-2"
             >
-              Get Your Honest Guide
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
+              <span>Class 10 Guide</span>
+              <span className="text-xs bg-black/20 px-2 py-0.5 rounded">Stream selection</span>
+            </Link>
+            <Link
+              to="/class12/onboarding"
+              id="hero-cta-12"
+              className="btn-primary text-base px-8 py-4 animate-pulse-glow font-semibold tracking-wide flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 border-purple-500/30 hover:from-purple-500 hover:to-indigo-500 shadow-purple-500/20"
+            >
+              <span>Class 12 Guide</span>
+              <span className="text-xs bg-black/20 px-2 py-0.5 rounded">College & Career</span>
             </Link>
             <Link to="/mentors" className="btn-outline text-base px-8 py-4 font-semibold">
               Talk to a Mentor Free

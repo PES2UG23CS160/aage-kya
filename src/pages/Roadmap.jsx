@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import {
   Spinner,
@@ -38,11 +38,13 @@ async function callGeminiRoadmap(form, option) {
 // ─── Main Roadmap Page Component ──────────────────────────────────────────────
 
 export default function Roadmap() {
+  const { classLevel = 'class12' } = useParams()
   const { state } = useLocation()
   
   // Try reading from Router state; fallback to localStorage
   const savedFormRaw = localStorage.getItem('aageKyaFormData')
-  const formData = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
+  const rawForm = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
+  const formData = rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
   
   const selectedOption = state?.option
 
@@ -215,7 +217,7 @@ export default function Roadmap() {
         {/* Navigation header */}
         <div className="mb-6 flex justify-between items-center">
           <Link
-            to="/result"
+            to={`/${formData?.classLevel || 'class12'}/result`}
             className="text-sm text-gray-400 hover:text-saffron transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -239,14 +241,18 @@ export default function Roadmap() {
         <div className="text-center mb-10 animate-fade-in">
           <div className="inline-flex items-center gap-2 bg-saffron/10 border border-saffron/25 rounded-full px-4 py-2 mb-5">
             <span className="w-2 h-2 rounded-full bg-saffron animate-pulse" />
-            <span className="text-saffron text-sm font-semibold">4-Year Learning & Skill Pathway</span>
+            <span className="text-saffron text-sm font-semibold">
+              {formData?.classLevel === 'class10' ? '4-Year High School & Early College Roadmap' : '4-Year Learning & Skill Pathway'}
+            </span>
           </div>
           <h1 className="font-display text-4xl md:text-5xl font-bold text-white mb-3">
             Your Roadmap for <br />
             <span className="gradient-text">{optionName || selectedOption?.path}</span>
           </h1>
           <p className="text-gray-400 text-base md:text-lg max-w-xl mx-auto">
-            A semester-by-semester build-up tailored to your background, finances, and goals.
+            {formData?.classLevel === 'class10'
+              ? 'A year-by-year stream and skill preparation roadmap tailored to your background, coaching access, and goals.'
+              : 'A semester-by-semester build-up tailored to your background, finances, and goals.'}
           </p>
         </div>
 
@@ -366,8 +372,21 @@ export default function Roadmap() {
                         <div
                           className={`absolute -left-[57px] top-1.5 w-14 h-14 rounded-2xl bg-navy-800 border-2 border-white/15 flex flex-col items-center justify-center font-display font-bold text-xs text-gray-400 transition-all duration-300 group-hover:border-saffron group-hover:bg-saffron/10 group-hover:text-saffron shadow-lg shadow-black/40`}
                         >
-                          <span className="text-[10px] uppercase font-semibold text-gray-500 group-hover:text-saffron/80">Year</span>
-                          <span className="text-lg leading-none mt-0.5">{yearData.year}</span>
+                          {formData?.classLevel === 'class10' ? (
+                            <>
+                              <span className="text-[9px] uppercase font-semibold text-gray-500 group-hover:text-saffron/80">
+                                {yearData.year === 1 ? 'Class' : yearData.year === 2 ? 'Class' : 'College'}
+                              </span>
+                              <span className="text-sm leading-none mt-0.5 font-extrabold">
+                                {yearData.year === 1 ? '11' : yearData.year === 2 ? '12' : `Yr ${yearData.year - 2}`}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[10px] uppercase font-semibold text-gray-500 group-hover:text-saffron/80">Year</span>
+                              <span className="text-lg leading-none mt-0.5">{yearData.year}</span>
+                            </>
+                          )}
                         </div>
 
                         {/* Glass card content */}

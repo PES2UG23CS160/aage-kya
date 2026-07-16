@@ -3,15 +3,20 @@ import { NavLink, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
 
-const navLinks = [
-  { to: '/',           label: 'Home' },
-  { to: '/onboarding', label: 'Get Started' },
-  { to: '/mentors',    label: 'Mentors' },
-  { to: '/result',     label: 'My Result' },
-]
-
 export default function Navbar() {
   const { user, profile, signOut } = useAuth()
+
+  const onboardingLink = profile?.class_level === 'class10' ? '/class10/onboarding' : '/onboarding'
+  const resultLink = profile?.class_level === 'class10' ? '/class10/result' : '/result'
+
+  const navLinks = [
+    { to: '/',           label: 'Home' },
+    { to: onboardingLink, label: 'Get Started' },
+    { to: '/mentors',    label: 'Mentors' },
+    { to: '/qa',         label: 'Ask a Senior' },
+    { to: '/official-readiness', label: 'Readiness' },
+    { to: resultLink,     label: 'My Result' },
+  ]
   const [isOpen, setIsOpen]     = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -124,14 +129,14 @@ export default function Navbar() {
                       </div>
                       <div className="py-1">
                         <Link
-                          to="/profile"
+                          to="/dashboard"
                           onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
                         >
                           <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                           </svg>
-                          My Profile
+                          Dashboard
                         </Link>
                         {isMentor && (
                           <Link
@@ -146,7 +151,7 @@ export default function Navbar() {
                           </Link>
                         )}
                         <Link
-                          to="/result"
+                          to={resultLink}
                           onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
                         >
@@ -219,8 +224,8 @@ export default function Navbar() {
               <div className="pt-3 border-t border-white/5 space-y-2">
                 {user ? (
                   <>
-                    <Link to="/profile" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
-                      My Profile
+                    <Link to="/dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
+                      Dashboard
                     </Link>
                     {isMentor && (
                       <Link to="/mentor-dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">

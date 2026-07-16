@@ -75,10 +75,11 @@ function createRateLimiter(limit, windowMs, message) {
   }
 }
 
-const guidanceLimiter = createRateLimiter(5, 86400000, "You can only generate 5 career guidance reports per day to prevent system abuse. Please try again tomorrow.")
-const roadmapLimiter = createRateLimiter(5, 86400000, "You can only generate 5 career roadmaps per day to prevent system abuse. Please try again tomorrow.")
+const isDev = process.env.NODE_ENV !== 'production'
+const guidanceLimiter = createRateLimiter(isDev ? 50 : 5, 86400000, "You can only generate 5 career guidance reports per day to prevent system abuse. Please try again tomorrow.")
+const roadmapLimiter  = createRateLimiter(isDev ? 50 : 5, 86400000, "You can only generate 5 career roadmaps per day to prevent system abuse. Please try again tomorrow.")
 const mentorApplyLimiter = createRateLimiter(1, 3600000, "You can only submit one application per hour. Please try again later.")
-const transcribeLimiter = createRateLimiter(15, 3600000, "You have exceeded the transcription rate limit. Please try again in an hour.")
+const transcribeLimiter  = createRateLimiter(15, 3600000, "You have exceeded the transcription rate limit. Please try again in an hour.")
 
 
 
@@ -120,7 +121,7 @@ function getSupabaseClient(authHeader) {
   return supabase
 }
 
-// Retrieve authenticated user from Supabase token
+// Retrieve authenticated user from Supabase token; also fetches role from students table
 async function getAuthUser(authHeader) {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null
@@ -129,9 +130,43 @@ async function getAuthUser(authHeader) {
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     if (error || !user) return null
+    // Attach role from students profile (defaults 'student' if row doesn't exist yet)
+    try {
+      const { data: profile } = await supabase
+        .from('students')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      user.role = profile?.role || 'student'
+    } catch (_) {
+      user.role = 'student'
+    }
     return user
   } catch (err) {
     return null
+  }
+}
+
+// Middleware: require a specific role (or any of a list of roles)
+function requireRole(...roles) {
+  return async (req, res, next) => {
+    const user = await getAuthUser(req.headers.authorization)
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
+    if (!roles.includes(user.role)) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: `Requires role: ${roles.join(' or ')}` })
+    }
+    req.authUser = user
+    next()
+  }
+}
+
+// Middleware: require any authenticated user (student, mentor, parent)
+function requireAuth() {
+  return async (req, res, next) => {
+    const user = await getAuthUser(req.headers.authorization)
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
+    req.authUser = user
+    next()
   }
 }
 
@@ -283,6 +318,54 @@ function buildPrompt(form, colleges = [], scholarships = []) {
   const income   = INCOME_LABELS[form.incomeRange] || form.incomeRange || 'Not specified'
   const cities   = (form.preferredCities || []).map((c) => CITY_LABELS[c] || c).join(', ') || 'Not specified'
   const firstGen = form.firstGenCollege === true ? 'Yes' : form.firstGenCollege === false ? 'No' : 'Not specified'
+  const classLevel = form.classLevel || 'class12'
+
+  if (classLevel === 'class10') {
+    const parentPressureText = form.parentPressure === true
+      ? `Yes (Notes: ${form.parentExpectations || 'None'})`
+      : 'No'
+    const coachingAccessText = form.coachingAccess === true ? 'Yes' : 'No'
+    
+    return `You are an honest, caring guide for Indian students after 10th grade. Give REAL, specific advice. Not generic. Not motivational fluff.
+
+Student Profile (Class 10 Student):
+- Board: ${form.board || 'Not specified'}
+- Marks (9th/10th Pre-boards): ${form.marks || 'Not specified'}%
+- State: ${form.state || 'Not specified'}
+- Family Income: ${income}
+- First Generation College Student: ${firstGen}
+- Location Constraints/Preferences: ${cities}
+- Subject Interests / Leaning: ${form.interests || 'Not specified'} (Stream leaning: ${form.stream || 'Undecided'})
+- Parent Pressure/Expectations: ${parentPressureText}
+- Risk Comfort (Safe vs Exploratory): ${form.riskComfort || 'Not specified'}
+- Coaching Access Nearby: ${coachingAccessText}
+- Biggest Fear about Stream Selection: ${form.biggestFear || 'Not specified'}
+
+Recommend 3-4 specific high school stream / education tracks (such as Science (PCM), Science (PCB), Commerce, Arts / Humanities, or specific Diploma/Vocational tracks) that fit this student's profile.
+
+Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw JSON):
+{
+  "summary": "A warm, honest 2-3 sentence summary of this student's current situation and core choices. Be specific to their marks, interests, and parental expectations.",
+  "options": [
+    {
+      "path": "Stream option name (e.g. Science (PCM) with Tech Focus)",
+      "honest_take": "2-3 sentences of brutally honest, specific advice for THIS Class 10 student. Explain why this fits their interests/risk/marks, and the difficulty level.",
+      "requires_entrance_exam": "Entrance exams they will face post-12th if they choose this stream (e.g. JEE Main, NEET-UG, CLAT, NATA, or None) — be specific",
+      "realistic_colleges": ["3-4 target high education institutions or specific stream pathways they should aim for in future"],
+      "avg_yearly_cost": "Realistic total yearly cost range for school + coaching/tuition in INR/year",
+      "opens_doors_to": ["3-4 specific future degrees or career roles this stream leads to"],
+      "watch_out_for": "One specific, honest warning/pitfall about this stream path",
+      "backup_plan": "A practical backup plan if they find the stream too difficult in Class 11/12 or change their mind (e.g. shifting to BCA, switching to Commerce stream, etc.)"
+    }
+  ],
+  "scholarship_to_check": "Name of a relevant scholarship they can check (or search on National Scholarship Portal)",
+  "one_thing_to_do_this_week": "One actionable task they must do this week to validate this choice"
+}
+`
+  }
+
+  // Class 12 prompt logic:
+  const entranceExamContext = ''
   const grounded = colleges.length > 0 || scholarships.length > 0
 
   const collegesSection = colleges.length > 0
@@ -309,25 +392,26 @@ Student Profile:
 - Preferred Study Location: ${cities}
 - Interests: ${form.interests || 'Not specified'}
 - Biggest Fear: ${form.biggestFear || 'Not specified'}
+${entranceExamContext}
 ${collegesSection}${scholarshipsSection}${groundingInstruction}
 Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw JSON):
 {
-  "summary": "A warm, honest 2-3 sentence summary of this student's situation and what makes their path unique. Be specific to their actual marks and stream.",
+  "summary": "A warm, honest 2-3 sentence summary of this student's situation. Be specific to their actual marks and stream. If they are PCB without NEET prep, acknowledge that MBBS is not in the picture right now and that's okay — there are great alternatives.",
   "options": [
     {
       "path": "Career / course path name",
-      "honest_take": "2-3 sentences of brutally honest, specific advice about this path for THIS student given their marks, income, and stream. No fluff.",
-      "realistic_colleges": ["Use college names from the VERIFIED LIST. 3-4 colleges realistic for this specific option and the student's marks."],
-      "avg_yearly_cost": "Realistic total yearly cost range in INR/year (tuition + hostel + misc) based on the colleges you selected",
+      "honest_take": "2-3 sentences of brutally honest, specific advice for THIS student. If this path requires a competitive entrance exam, say exactly which exam, how competitive it is, and what they'd need to do. If it is direct admission, say so clearly.",
+      "requires_entrance_exam": "NEET-UG / JEE Main / JEE Advanced / State CET / CLAT / None — be specific",
+      "realistic_colleges": ["3-4 real colleges realistic for this option and the student's marks and state. Use verified list if provided."],
+      "avg_yearly_cost": "Realistic total yearly cost range in INR/year (tuition + hostel + misc)",
       "opens_doors_to": ["3-4 specific career roles or further study options this path leads to"],
-      "watch_out_for": "One specific, honest warning about this path — what most people don't tell you"
+      "watch_out_for": "One specific, honest warning — what most people don't tell you about this path",
+      "backup_plan": "A practical backup plan if they find college entry too competitive or fail key exams (e.g. switching from BTech to BCA, or from NEET to BSc Nursing)"
     }
   ],
-  "scholarship_to_check": "The exact name of the most relevant scholarship from the VERIFIED SCHOLARSHIPS list, followed by one sentence on why it fits this student.",
-  "one_thing_to_do_this_week": "One concrete, specific action they can take in the next 7 days. Not vague. Not 'research your options'. Something real."
-}
-
-Give 2-3 options. Make them genuinely different from each other. Be honest about costs — Indian parents underestimate them.`
+  "scholarship_to_check": "Name of a relevant scholarship they can check",
+  "one_thing_to_do_this_week": "One actionable task they must do this week"
+}`
 }
 
 // Roadmap Prompt Builder
@@ -335,28 +419,39 @@ function buildRoadmapPrompt(form, option) {
   const income  = INCOME_LABELS[form.incomeRange] || form.incomeRange || 'Not specified'
   const cities  = (form.preferredCities || []).map((c) => CITY_LABELS[c] || c).join(', ') || 'Not specified'
   const firstGen = form.firstGenCollege === true ? 'Yes' : form.firstGenCollege === false ? 'No' : 'Not specified'
+  const classLevel = form.classLevel || 'class12'
+
+  const customInstruction = classLevel === 'class10'
+    ? `Since the student is in Class 10 choosing a stream, generate a detailed 4-year learning, skill, exam, and preparation roadmap.
+The years MUST represent:
+- Year 1: Class 11 (Focus on stream mastery, basic concepts, early certifications/courses, and building foundational skills)
+- Year 2: Class 12 (Focus on Board prep, final mock tests for entrance exams, simple projects/coding/design challenges)
+- Year 3: College Year 1 (Focus on early college adaptation, starting personal projects, joining community and coding clubs)
+- Year 4: College Year 2 (Focus on advanced skill acquisition, early internship hunting, and open source/portfolio building)`
+    : `Generate a detailed 4-year learning, skill, project, and certification roadmap to achieve a career as a "${option.path}" (Honest Take context: ${option.honest_take}).
+The years represent College Year 1, 2, 3, and 4.`
 
   return `You are an expert career counsellor, mentor, and academic advisor for Indian students.
-Generate a detailed 4-year learning, skill, project, and certification roadmap to achieve a career as a "${option.path}" (Honest Take context: ${option.honest_take}).
+${customInstruction}
 Tailor this roadmap specifically to this student's profile:
-- 12th Board: ${form.board || 'Not specified'}
-- Stream: ${form.stream || 'Not specified'}
-- 12th Marks: ${form.marks || 'Not specified'}%
+- Board: ${form.board || 'Not specified'}
+- Marks: ${form.marks || 'Not specified'}%
 - State: ${form.state || 'Not specified'}
 - Family Income: ${income}
 - First Generation College Student: ${firstGen}
-- Preferred Study Location: ${cities}
+- Preferred Location/Constraint: ${cities}
 - Interests: ${form.interests || 'Not specified'}
 - Biggest Fear: ${form.biggestFear || 'Not specified'}
+${classLevel === 'class10' ? `- Leaning Stream: ${form.stream || 'Undecided'}` : `- Career Path Leaning: ${option.path}`}
 
 Income-Based Customization:
 If family income is low (e.g. Below 2.5L or 2.5-5L), prioritize free/affordable learning resources, certifications (like Google Career Certificates on Coursera with financial aid, NPTEL/Swayam which is free/low cost in India, FreeCodeCamp), and open-source contributions. Avoid expensive bootcamps or paid certifications.
 
-Academic/College Customization:
-If marks are low (below 75%) or they are likely entering a tier-3 local college, explicitly focus the advice on building a strong portfolio, networking on LinkedIn, open-source work, and off-campus placements.
+Academic Customization:
+If marks are low (below 75%), focus the advice on building a strong portfolio, networking on LinkedIn, off-campus placements, or stable alternative pathways.
 
 Biggest Fear Customization:
-Integrate specific activities or milestones directly addressing their biggest fear (e.g. public speaking, math anxiety, financial burden) during their college years.
+Integrate specific activities or milestones directly addressing their biggest fear during these 4 years.
 
 Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw JSON):
 {
@@ -365,11 +460,11 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
   "years": [
     {
       "year": 1,
-      "focus": "Theme/focus of Year 1 (e.g., Programming Fundamentals & Web Basics)",
+      "focus": "Theme/focus of Year 1",
       "skills": ["3-4 specific skills to master this year"],
-      "certifications": ["1-2 specific, highly valuable certifications to aim for (prioritize free/low-cost or financial-aid options if income is low)"],
+      "certifications": ["1-2 specific, highly valuable certifications to aim for"],
       "internships_projects": ["2 specific, practical projects or open-source tasks to complete"],
-      "milestones": ["2 key milestones to achieve by the end of Year 1 (e.g., Create GitHub portfolio, Build a personal site)"]
+      "milestones": ["2 key milestones to achieve by the end of Year 1"]
     },
     {
       "year": 2,
@@ -396,26 +491,56 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
       "milestones": ["2 key milestones"]
     }
   ]
+}`
 }
 
-Provide highly specific, actionable, and realistic advice for Indian students. Do not give generic advice. Keep the names of skills and certifications real and relevant.`
+// Compute AI confidence score from form field completeness
+function computeConfidence(form) {
+  const KEY_FIELDS = ['fullName', 'state', 'board', 'stream', 'marks', 'incomeRange', 'firstGenCollege', 'preferredCities', 'interests', 'biggestFear']
+  const filled = KEY_FIELDS.filter(k => {
+    const v = form[k]
+    if (v === null || v === undefined) return false
+    if (typeof v === 'string') return v.trim().length > 3
+    if (Array.isArray(v)) return v.length > 0
+    return true
+  }).length
+  const score = Math.round((filled / KEY_FIELDS.length) * 100)
+  const label = score >= 80 ? 'High' : score >= 50 ? 'Medium' : 'Low'
+  const reason = score >= 80
+    ? 'All key details provided — recommendation is well-tailored.'
+    : score >= 50
+    ? 'Some details missing — guidance is good but could improve with more context.'
+    : 'Several fields are incomplete — filling them in will significantly improve accuracy.'
+  return { confidence_score: score, confidence_label: label, confidence_reason: reason }
 }
 
-// Helper to call Groq and parse JSON output
-async function callGemini(prompt) {
+// Helper to call Groq and parse JSON output (with structured latency logging)
+async function callGemini(prompt, { studentId = null, callType = 'guidance' } = {}) {
   const client = getGroqClient()
-  const completion = await client.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.7,
-    max_tokens: 2048,
-    response_format: { type: 'json_object' },
-  })
-
-  const text = completion.choices[0].message.content
-  // Clean markdown backticks if model ignores JSON instruction
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  return JSON.parse(cleaned)
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+  const promptTokenEstimate = Math.ceil(prompt.length / 4)
+  const start = Date.now()
+  let parseOk = false
+  try {
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 2048,
+      response_format: { type: 'json_object' },
+    })
+    const text = completion.choices[0].message.content
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const result = JSON.parse(cleaned)
+    parseOk = true
+    const latencyMs = Date.now() - start
+    console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType, model, promptTokens: promptTokenEstimate, latencyMs, parseOk, studentId }))
+    return result
+  } catch (err) {
+    const latencyMs = Date.now() - start
+    console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call_error', callType, model, promptTokens: promptTokenEstimate, latencyMs, parseOk, studentId, error: err.message }))
+    throw err
+  }
 }
 
 // --- Endpoints ---
@@ -453,6 +578,30 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         .maybeSingle()
 
       if (cached) {
+        // Fetch matching scholarships for the student dynamically to show the list
+        const { data: student } = await client
+          .from('students')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        let scholarships_list = []
+        if (student) {
+          const mappedForm = {
+            stream: student.stream,
+            state: student.state,
+            marks: student.marks,
+            incomeRange: student.income_range
+          }
+          const scholarships = await fetchScholarshipsForStudent(mappedForm)
+          scholarships_list = scholarships.map(s => ({
+            name: s.name,
+            application_url: s.application_url,
+            deadline_pattern: s.deadline_pattern,
+            description: s.description,
+          }))
+        }
+
         return res.json({
           summary: cached.summary,
           options: cached.options,
@@ -460,6 +609,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
           one_thing_to_do_this_week: cached.one_thing_to_do_this_week,
           cached: true,
           grounded: false, // cached results predate the RAG enrichment
+          scholarships_list
         })
       }
     }
@@ -478,7 +628,8 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
 
     // Build RAG-grounded prompt and call Gemini
     const prompt = buildPrompt(formData, colleges, scholarships)
-    const result = await callGemini(prompt)
+    const confidence = computeConfidence(formData)
+    const result = await callGemini(prompt, { studentId: user?.id || null, callType: 'guidance' })
 
     // Build helper maps so the frontend can render source links without
     // relying on Gemini to hallucinate URLs.
@@ -509,6 +660,11 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         preferred_cities: formData.preferredCities || [],
         interests: formData.interests || '',
         biggest_fear: formData.biggestFear || '',
+        class_level: formData.classLevel || 'class12',
+        parent_pressure: formData.parentPressure === true,
+        parent_expectations: formData.parentExpectations || '',
+        risk_comfort: formData.riskComfort || '',
+        coaching_access: formData.coachingAccess === true,
         updated_at: new Date().toISOString()
       })
 
@@ -518,15 +674,34 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         summary: result.summary,
         options: result.options,
         scholarship_to_check: result.scholarship_to_check,
-        one_thing_to_do_this_week: result.one_thing_to_do_this_week
+        one_thing_to_do_this_week: result.one_thing_to_do_this_week,
+        confidence_score: confidence.confidence_score,
+        confidence_label: confidence.confidence_label,
+        confidence_reason: confidence.confidence_reason,
+        scholarships_list: (scholarships || []).map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description }))
       })
+      // Send guidance-ready email notification (fire-and-forget)
+      sendEmail(
+        user.email,
+        'Your Career Guidance Is Ready — Aage Kya?',
+        `<p>Hi! Your personalised career guidance report has been generated. <a href="https://aagekya.in/result">View it here.</a></p>`
+      )
     }
+
+    const scholarships_list = (scholarships || []).map(s => ({
+      name: s.name,
+      application_url: s.application_url,
+      deadline_pattern: s.deadline_pattern,
+      description: s.description,
+    }))
 
     res.json({
       ...result,
       grounded,
       colleges_data,
       scholarship_data,
+      scholarships_list,
+      ...confidence,
     })
   } catch (err) {
     console.error('Guidance API Error:', err.message)
@@ -630,6 +805,11 @@ app.post('/api/sync', async (req, res) => {
       preferred_cities: formData.preferredCities || [],
       interests: formData.interests || '',
       biggest_fear: formData.biggestFear || '',
+      class_level: formData.classLevel || 'class12',
+      parent_pressure: formData.parentPressure === true,
+      parent_expectations: formData.parentExpectations || '',
+      risk_comfort: formData.riskComfort || '',
+      coaching_access: formData.coachingAccess === true,
       updated_at: new Date().toISOString()
     })
 
@@ -654,6 +834,139 @@ app.post('/api/sync', async (req, res) => {
     res.json({ success: true })
   } catch (err) {
     console.error('Sync API Error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// Academic Wallet Update Endpoint
+app.put('/api/wallet', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Auth token is invalid or missing' })
+    }
+
+    const { wallet } = req.body
+    if (!Array.isArray(wallet)) {
+      return res.status(400).json({ error: 'INVALID_DATA', message: 'wallet must be an array' })
+    }
+
+    const client = getSupabaseClient(authHeader)
+    const { data, error } = await client
+      .from('students')
+      .update({ academic_wallet: wallet, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select()
+
+    if (error) throw error
+
+    res.json({ success: true, wallet: data[0]?.academic_wallet || [] })
+  } catch (err) {
+    console.error('Wallet API Error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// Re-onboard (archive current guidance results before re-running onboarding)
+app.post('/api/re-onboard', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization
+    const user = await getAuthUser(authHeader)
+    if (!user) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Auth token is invalid or missing' })
+    }
+
+    const client = getSupabaseClient(authHeader)
+
+    // Fetch current student profile
+    const { data: student, error: studentErr } = await client
+      .from('students')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (studentErr) throw studentErr
+    if (!student) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Student profile not found' })
+    }
+
+    // Fetch latest guidance result
+    const { data: guidance, error: guidanceErr } = await client
+      .from('guidance_results')
+      .select('*')
+      .eq('student_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (guidanceErr) throw guidanceErr
+
+    // Fetch roadmaps
+    const { data: roadmaps, error: roadmapsErr } = await client
+      .from('roadmaps')
+      .select('*')
+      .eq('student_id', user.id)
+
+    if (roadmapsErr) throw roadmapsErr
+
+    // Only archive if there is actually some guidance content to archive
+    if (guidance) {
+      const snapshot = {
+        timestamp: new Date().toISOString(),
+        profile: {
+          fullName: student.full_name,
+          state: student.state,
+          board: student.board,
+          stream: student.stream,
+          marks: student.marks,
+          incomeRange: student.income_range,
+          firstGenCollege: student.first_gen_college,
+          preferredCities: student.preferred_cities,
+          interests: student.interests,
+          biggestFear: student.biggest_fear,
+          classLevel: student.class_level,
+          parentPressure: student.parent_pressure,
+          parentExpectations: student.parent_expectations,
+          riskComfort: student.risk_comfort,
+          coachingAccess: student.coaching_access
+        },
+        guidance: {
+          summary: guidance.summary,
+          options: guidance.options,
+          scholarship_to_check: guidance.scholarship_to_check,
+          one_thing_to_do_this_week: guidance.one_thing_to_do_this_week,
+          created_at: guidance.created_at
+        },
+        roadmaps: (roadmaps || []).map(r => ({
+          career_path: r.career_path,
+          overview: r.overview,
+          years: r.years,
+          created_at: r.created_at
+        }))
+      }
+
+      const history = Array.isArray(student.history) ? student.history : []
+      const updatedHistory = [snapshot, ...history].slice(0, 5)
+
+      // Update student profile history
+      const { error: updateErr } = await client
+        .from('students')
+        .update({ history: updatedHistory })
+        .eq('id', user.id)
+
+      if (updateErr) throw updateErr
+
+      // Delete current guidance results & roadmaps so user can re-generate a new cache
+      await Promise.all([
+        client.from('guidance_results').delete().eq('student_id', user.id),
+        client.from('roadmaps').delete().eq('student_id', user.id)
+      ])
+    }
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Re-onboard API Error:', err.message)
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
 })
@@ -766,6 +1079,24 @@ const HARDCODED_MENTORS = [
     initials_bg: 'bg-emerald-500/20 text-emerald-300',
     available: true,
   },
+  {
+    id: 'fallback-4',
+    name: 'Anjali D.',
+    initials: 'AD',
+    college: 'Delhi University',
+    degree: 'B.A. Psychology',
+    stream: 'Class 10 → Humanities',
+    stream_category: 'Class 10 / Stream Selection',
+    city: 'Delhi',
+    cal_link: 'https://calendly.com/anjali-d-mentor/20min',
+    story: "I spent months stressing over whether to take PCM or Arts. I chose Arts and it was the best decision of my life. Let's figure out what fits you.",
+    tags: ['Stream selection', 'Humanities', 'Parent pressure'],
+    gradient: 'from-amber-500/30 to-amber-600/10',
+    border: 'border-amber-500/25',
+    tag_color: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+    initials_bg: 'bg-amber-500/20 text-amber-300',
+    available: true,
+  },
 ]
 
 // Fetch active mentors list
@@ -874,6 +1205,354 @@ app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
     } else {
       res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
     }
+  }
+})
+
+// ─── Phase 3 Endpoints ────────────────────────────────────────────────────────
+
+// ── Email helper (Resend) ────────────────────────────────────────────────────
+async function sendEmail(to, subject, html) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    console.warn('[email] RESEND_API_KEY not set — skipping email send')
+    return
+  }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ from: 'Aage Kya? <noreply@aagekya.in>', to, subject, html }),
+    })
+    const data = await res.json()
+    if (!res.ok) console.error('[email] Resend error:', data)
+    else console.log(`[email] Sent "${subject}" to ${to}`)
+  } catch (err) {
+    console.error('[email] Send failed:', err.message)
+  }
+}
+
+// ── POST /api/clarify — detect incomplete fields before guidance ─────────────
+const clarifyLimiter = createRateLimiter(20, 3600000, 'Too many clarify requests.')
+app.post('/api/clarify', clarifyLimiter, (req, res) => {
+  const { formData } = req.body
+  if (!formData) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing formData' })
+
+  const CLARIFY_FIELDS = [
+    { key: 'interests',    question: 'What subjects or activities excite you the most right now?', label: 'Interests' },
+    { key: 'biggestFear', question: 'What\'s your biggest worry about choosing a stream or career path?', label: 'Biggest Fear' },
+    { key: 'stream',      question: 'Which stream are you currently leaning towards (e.g. Science, Commerce, Arts)?', label: 'Stream Preference' },
+    { key: 'incomeRange', question: 'What is your approximate family income per year?', label: 'Family Income' },
+    { key: 'preferredCities', question: 'Are you open to studying away from home, or do you prefer staying close?', label: 'Location Preference' },
+  ]
+
+  const missing = CLARIFY_FIELDS.filter(f => {
+    const v = formData[f.key]
+    if (v === null || v === undefined) return true
+    if (typeof v === 'string') return v.trim().length < 5
+    if (Array.isArray(v)) return v.length === 0
+    return false
+  })
+
+  res.json({ needs_clarification: missing.length > 0, missing_fields: missing })
+})
+
+// ── POST /api/parent-summary — AI rewrite in parent-friendly language ─────────
+const parentSummaryLimiter = createRateLimiter(10, 3600000, 'Too many parent summary requests.')
+app.post('/api/parent-summary', parentSummaryLimiter, requireAuth(), async (req, res) => {
+  const { guidanceResultId } = req.body
+  const user = req.authUser
+  if (!guidanceResultId) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing guidanceResultId' })
+
+  try {
+    const client = getSupabaseClient(req.headers.authorization)
+
+    // Fetch guidance result (RLS ensures student can only see their own)
+    const { data: gr, error } = await client
+      .from('guidance_results')
+      .select('*')
+      .eq('id', guidanceResultId)
+      .eq('student_id', user.id)
+      .maybeSingle()
+
+    if (error || !gr) return res.status(404).json({ error: 'NOT_FOUND', message: 'Guidance result not found' })
+
+    // Return cached parent summary if already generated
+    if (gr.parent_summary && gr.parent_summary.length > 20) {
+      return res.json({ parent_summary: gr.parent_summary, cached: true })
+    }
+
+    // Build parent-rewrite prompt
+    const optionsSummary = (gr.options || []).map((o, i) =>
+      `Option ${i+1}: ${o.path}\nHonest Take: ${o.honest_take}\nBackup: ${o.backup_plan || 'N/A'}`
+    ).join('\n\n')
+
+    const parentPrompt = `You are a calm, clear communicator writing for Indian parents.
+Rewrite the following AI-generated student career guidance in simple, reassuring parent-friendly language.
+Focus on: stability of career outcome, expected education cost, and backup safety net.
+Avoid jargon. Write in plain Hindi-English mixed style if helpful (but prefer English).
+Keep it under 200 words total.
+
+Summary for student: ${gr.summary}
+
+Recommended paths:\n${optionsSummary}
+
+Write a warm parent briefing. Include: 1. Why this suits your child, 2. Expected cost range, 3. Backup safety plan. Output only the briefing text, no JSON.`
+
+    const groqClient = getGroqClient()
+    const completion = await groqClient.chat.completions.create({
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: parentPrompt }],
+      temperature: 0.6,
+      max_tokens: 512,
+    })
+    const parentSummaryText = completion.choices[0].message.content.trim()
+    console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType: 'parent_summary', studentId: user.id, latencyMs: 0 }))
+
+    // Cache it back to guidance_results
+    await client.from('guidance_results').update({ parent_summary: parentSummaryText }).eq('id', guidanceResultId)
+
+    res.json({ parent_summary: parentSummaryText, cached: false })
+  } catch (err) {
+    console.error('Parent summary error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── GET /api/scenarios ─────────────────────────────────────────────────────────
+app.get('/api/scenarios', requireAuth(), async (req, res) => {
+  const user = req.authUser
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('scenarios')
+      .select('id, label, form_data, guidance_result, created_at')
+      .eq('student_id', user.id)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    res.json({ scenarios: data || [] })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── POST /api/scenarios ────────────────────────────────────────────────────────
+const scenarioLimiter = createRateLimiter(20, 86400000, 'Too many scenarios saved today.')
+app.post('/api/scenarios', requireAuth(), scenarioLimiter, async (req, res) => {
+  const user = req.authUser
+  const { label, formData, guidanceResult } = req.body
+  if (!formData || !guidanceResult) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing formData or guidanceResult' })
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('scenarios')
+      .insert({ student_id: user.id, label: label || 'Saved Scenario', form_data: formData, guidance_result: guidanceResult })
+      .select()
+      .single()
+    if (error) throw error
+    res.json({ scenario: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── DELETE /api/scenarios/:id ──────────────────────────────────────────────────
+app.delete('/api/scenarios/:id', requireAuth(), async (req, res) => {
+  const user = req.authUser
+  const { id } = req.params
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { error } = await client.from('scenarios').delete().eq('id', id).eq('student_id', user.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── POST /api/mentor-sessions ──────────────────────────────────────────────────
+const sessionCreateLimiter = createRateLimiter(5, 86400000, 'Too many session requests today.')
+app.post('/api/mentor-sessions', requireAuth(), sessionCreateLimiter, async (req, res) => {
+  const user = req.authUser
+  const { mentorId, sessionDate } = req.body
+  if (!mentorId) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing mentorId' })
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('mentor_sessions')
+      .insert({ student_id: user.id, mentor_id: mentorId, session_date: sessionDate || null, status: 'pending' })
+      .select()
+      .single()
+    if (error) throw error
+    // Send confirmation email (fire-and-forget)
+    const { data: profile } = await supabase.auth.admin?.getUserById?.(user.id).catch(() => ({ data: null })) || {}
+    sendEmail(
+      user.email,
+      'Mentor Session Requested — Aage Kya?',
+      `<p>Hi there! Your mentor session request has been submitted. Your mentor will confirm shortly.</p>`
+    )
+    res.json({ session: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── GET /api/mentor-sessions ───────────────────────────────────────────────────
+app.get('/api/mentor-sessions', requireAuth(), async (req, res) => {
+  const user = req.authUser
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    // Students see their own; mentors see sessions for their profile
+    let query
+    if (user.role === 'mentor') {
+      // Find mentor record by user_id
+      const { data: mentorRow } = await supabase.from('mentors').select('id').eq('user_id', user.id).maybeSingle()
+      if (!mentorRow) return res.json({ sessions: [] })
+      const { data, error } = await client.from('mentor_sessions').select('*, mentors(name)').eq('mentor_id', mentorRow.id).order('created_at', { ascending: false })
+      if (error) throw error
+      return res.json({ sessions: data || [] })
+    } else {
+      const { data, error } = await client.from('mentor_sessions').select('*, mentors(name)').eq('student_id', user.id).order('created_at', { ascending: false })
+      if (error) throw error
+      return res.json({ sessions: data || [] })
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── PATCH /api/mentor-sessions/:id/rate ───────────────────────────────────────
+app.patch('/api/mentor-sessions/:id/rate', requireAuth(), async (req, res) => {
+  const { id } = req.params
+  const { rating, ratingComment } = req.body
+  const user = req.authUser
+  if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Rating must be 1–5' })
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('mentor_sessions')
+      .update({ rating: Number(rating), rating_comment: ratingComment || '' })
+      .eq('id', id).eq('student_id', user.id)
+      .select().single()
+    if (error) throw error
+    res.json({ session: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── PATCH /api/mentor-sessions/:id/notes — mentor writes session notes ─────────
+app.patch('/api/mentor-sessions/:id/notes', requireRole('mentor'), async (req, res) => {
+  const { id } = req.params
+  const { notes, status } = req.body
+  const user = req.authUser
+  try {
+    // Verify the mentor owns this session
+    const { data: mentorRow } = await supabase.from('mentors').select('id').eq('user_id', user.id).maybeSingle()
+    if (!mentorRow) return res.status(403).json({ error: 'FORBIDDEN', message: 'No mentor profile found' })
+    const client = getSupabaseClient(req.headers.authorization)
+    const update = {}
+    if (notes !== undefined) update.notes = notes
+    if (status) update.status = status
+    const { data, error } = await client
+      .from('mentor_sessions').update(update).eq('id', id).eq('mentor_id', mentorRow.id)
+      .select().single()
+    if (error) throw error
+    res.json({ session: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── GET /api/qa ────────────────────────────────────────────────────────────────
+app.get('/api/qa', async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = 20
+  const offset = (page - 1) * limit
+  const streamTag = req.query.stream || null
+  try {
+    let query = supabase
+      .from('qa_posts')
+      .select('id, question, answer, answered_at, stream_tag, created_at, mentor_id, mentors(name, initials)')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+    if (streamTag) query = query.eq('stream_tag', streamTag)
+    const { data, error } = await query
+    if (error) throw error
+    res.json({ posts: data || [], page })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── POST /api/qa ───────────────────────────────────────────────────────────────
+const qaPostLimiter = createRateLimiter(5, 3600000, 'Too many Q&A posts. Please wait an hour.')
+app.post('/api/qa', requireAuth(), qaPostLimiter, async (req, res) => {
+  const user = req.authUser
+  const { question, streamTag } = req.body
+  if (!question || question.trim().length < 10) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Question must be at least 10 characters' })
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('qa_posts')
+      .insert({ author_id: user.id, question: question.trim(), stream_tag: streamTag || '' })
+      .select().single()
+    if (error) throw error
+    res.json({ post: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── PATCH /api/qa/:id/answer — mentor posts an answer ─────────────────────────
+app.patch('/api/qa/:id/answer', requireRole('mentor'), async (req, res) => {
+  const { id } = req.params
+  const { answer } = req.body
+  const user = req.authUser
+  if (!answer || answer.trim().length < 5) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Answer too short' })
+  try {
+    const { data: mentorRow } = await supabase.from('mentors').select('id').eq('user_id', user.id).maybeSingle()
+    const client = getSupabaseClient(req.headers.authorization)
+    const { data, error } = await client
+      .from('qa_posts')
+      .update({ answer: answer.trim(), answered_at: new Date().toISOString(), mentor_id: mentorRow?.id || null })
+      .eq('id', id)
+      .select().single()
+    if (error) throw error
+    res.json({ post: data })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── GET /api/notifications ─────────────────────────────────────────────────────
+app.get('/api/notifications', requireAuth(), async (req, res) => {
+  const user = req.authUser
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { data, error } = await client
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) throw error
+    res.json({ notifications: data || [] })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ── PATCH /api/notifications/:id/read ─────────────────────────────────────────
+app.patch('/api/notifications/:id/read', requireAuth(), async (req, res) => {
+  const { id } = req.params
+  const user = req.authUser
+  const client = getSupabaseClient(req.headers.authorization)
+  try {
+    const { error } = await client.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id).eq('user_id', user.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
 })
 

@@ -19,6 +19,13 @@ CREATE TABLE IF NOT EXISTS public.students (
   preferred_cities   TEXT[]      NOT NULL DEFAULT '{}',
   interests          TEXT        NOT NULL DEFAULT '',
   biggest_fear       TEXT        NOT NULL DEFAULT '',
+  class_level        TEXT        NOT NULL DEFAULT 'class12',
+  parent_pressure    BOOLEAN,
+  parent_expectations TEXT,
+  risk_comfort       TEXT,
+  coaching_access    BOOLEAN,
+  academic_wallet    JSONB       NOT NULL DEFAULT '[]',
+  history            JSONB       NOT NULL DEFAULT '[]',
   created_at         TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
@@ -234,11 +241,17 @@ CREATE POLICY "mentor_applications_public_insert"
   ON public.mentor_applications FOR INSERT WITH CHECK (true);
 
 
--- ─── 12. Role support for students ───────────────────────────────────────────
+-- ─── 12. Role support & Class 10 extensions for students ─────────────────────
 -- Adds a role column so we can distinguish regular students from mentors.
--- Values: 'student' (default) | 'mentor'
+-- Also adds Class 10 specific profile attributes.
+-- Values for role: 'student' (default) | 'mentor'
 
 ALTER TABLE public.students ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student';
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS class_level TEXT NOT NULL DEFAULT 'class12';
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS parent_pressure BOOLEAN;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS parent_expectations TEXT;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS risk_comfort TEXT;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS coaching_access BOOLEAN;
 
 -- ─── 13. Mentor account linkage ───────────────────────────────────────────────
 -- Links a mentor profile row to an auth.users account.
@@ -337,3 +350,128 @@ CREATE POLICY "chat_messages_participant_insert"
 -- Run in Supabase SQL editor:
 -- ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
 -- ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_sessions;
+
+-- ─── MIGRATION (Phase 2 Additions) ──────────────────────────────────────────
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS academic_wallet JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS history JSONB NOT NULL DEFAULT '[]';
+
+-- ─── MIGRATION (Phase 3 Additions) ──────────────────────────────────────────
+
+-- Role column on students (student | mentor | parent)
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student';
+
+-- Confidence + AI parent summary on guidance_results
+ALTER TABLE public.guidance_results ADD COLUMN IF NOT EXISTS confidence_score   INT  NOT NULL DEFAULT 0;
+ALTER TABLE public.guidance_results ADD COLUMN IF NOT EXISTS confidence_label   TEXT NOT NULL DEFAULT 'Medium';
+ALTER TABLE public.guidance_results ADD COLUMN IF NOT EXISTS confidence_reason  TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.guidance_results ADD COLUMN IF NOT EXISTS parent_summary     TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.guidance_results ADD COLUMN IF NOT EXISTS scholarships_list  JSONB NOT NULL DEFAULT '[]';
+
+-- ─── 16. Scenarios ("what-if" saved guidance versions) ──────────────────────
+CREATE TABLE IF NOT EXISTS public.scenarios (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id      UUID        NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  label           TEXT        NOT NULL DEFAULT 'Untitled Scenario',
+  form_data       JSONB       NOT NULL DEFAULT '{}',
+  guidance_result JSONB       NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_scenarios_student ON public.scenarios (student_id, created_at DESC);
+ALTER TABLE public.scenarios ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "scenarios_self_rw" ON public.scenarios;
+CREATE POLICY "scenarios_self_rw"
+  ON public.scenarios FOR ALL
+  USING (auth.uid() = student_id)
+  WITH CHECK (auth.uid() = student_id);
+
+-- ─── 17. Mentor Sessions ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.mentor_sessions (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id      UUID        NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  mentor_id       UUID        NOT NULL REFERENCES public.mentors(id) ON DELETE CASCADE,
+  session_date    TIMESTAMPTZ,
+  status          TEXT        NOT NULL DEFAULT 'pending',   -- pending | confirmed | completed | cancelled
+  notes           TEXT        NOT NULL DEFAULT '',          -- mentor writes after session
+  rating          INT         CHECK (rating BETWEEN 1 AND 5),
+  rating_comment  TEXT        NOT NULL DEFAULT '',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_mentor_sessions_student ON public.mentor_sessions (student_id);
+CREATE INDEX IF NOT EXISTS idx_mentor_sessions_mentor  ON public.mentor_sessions (mentor_id);
+ALTER TABLE public.mentor_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Students read/write their own sessions
+DROP POLICY IF EXISTS "mentor_sessions_student_rw" ON public.mentor_sessions;
+CREATE POLICY "mentor_sessions_student_rw"
+  ON public.mentor_sessions FOR ALL
+  USING (auth.uid() = student_id)
+  WITH CHECK (auth.uid() = student_id);
+
+-- Mentors can read and update sessions where they are the mentor
+DROP POLICY IF EXISTS "mentor_sessions_mentor_read" ON public.mentor_sessions;
+CREATE POLICY "mentor_sessions_mentor_read"
+  ON public.mentor_sessions FOR SELECT
+  USING (auth.uid() IN (SELECT user_id FROM public.mentors WHERE id = mentor_id));
+
+DROP POLICY IF EXISTS "mentor_sessions_mentor_update" ON public.mentor_sessions;
+CREATE POLICY "mentor_sessions_mentor_update"
+  ON public.mentor_sessions FOR UPDATE
+  USING (auth.uid() IN (SELECT user_id FROM public.mentors WHERE id = mentor_id));
+
+-- ─── 18. Q&A Board ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.qa_posts (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  mentor_id    UUID        REFERENCES public.mentors(id) ON DELETE SET NULL,
+  stream_tag   TEXT        NOT NULL DEFAULT '',
+  question     TEXT        NOT NULL,
+  answer       TEXT        NOT NULL DEFAULT '',
+  answered_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_qa_posts_created ON public.qa_posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_qa_posts_mentor  ON public.qa_posts (mentor_id);
+ALTER TABLE public.qa_posts ENABLE ROW LEVEL SECURITY;
+
+-- Public read, authenticated insert, own delete
+DROP POLICY IF EXISTS "qa_posts_public_read"   ON public.qa_posts;
+CREATE POLICY "qa_posts_public_read"   ON public.qa_posts FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "qa_posts_auth_insert"   ON public.qa_posts;
+CREATE POLICY "qa_posts_auth_insert"   ON public.qa_posts FOR INSERT WITH CHECK (auth.uid() = author_id);
+
+DROP POLICY IF EXISTS "qa_posts_own_delete"    ON public.qa_posts;
+CREATE POLICY "qa_posts_own_delete"    ON public.qa_posts FOR DELETE USING (auth.uid() = author_id);
+
+-- Mentors can update (answer) any post
+DROP POLICY IF EXISTS "qa_posts_mentor_update" ON public.qa_posts;
+CREATE POLICY "qa_posts_mentor_update"
+  ON public.qa_posts FOR UPDATE
+  USING (
+    auth.uid() IN (SELECT user_id FROM public.mentors WHERE id IS NOT NULL)
+    OR auth.uid() = author_id
+  );
+
+-- ─── 19. Notifications ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type       TEXT        NOT NULL,          -- guidance_ready | session_confirmed | scholarship_deadline
+  payload    JSONB       NOT NULL DEFAULT '{}',
+  sent_at    TIMESTAMPTZ,
+  read_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id, created_at DESC);
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "notifications_self_rw" ON public.notifications;
+CREATE POLICY "notifications_self_rw"
+  ON public.notifications FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);

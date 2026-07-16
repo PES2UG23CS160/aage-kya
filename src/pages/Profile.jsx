@@ -90,7 +90,7 @@ export default function Profile() {
             </div>
 
             <Link
-              to="/onboarding"
+              to={profile?.class_level === 'class10' ? '/class10/onboarding' : '/class12/onboarding'}
               className="btn-outline text-xs py-2 px-4 self-start"
             >
               Update Profile
@@ -102,7 +102,7 @@ export default function Profile() {
         <div className="glass-card p-6 mb-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-display text-xl font-bold text-white">Career Guidance</h2>
-            <Link to="/result" className="text-saffron text-xs font-semibold hover:underline">
+            <Link to={profile?.class_level === 'class10' ? '/class10/result' : '/class12/result'} className="text-saffron text-xs font-semibold hover:underline">
               View Full Report →
             </Link>
           </div>
@@ -141,7 +141,7 @@ export default function Profile() {
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-display text-xl font-bold text-white">Your Roadmaps</h2>
             {roadmaps.length > 0 && (
-              <Link to="/roadmap" className="text-saffron text-xs font-semibold hover:underline">
+              <Link to={profile?.class_level === 'class10' ? '/class10/roadmap' : '/class12/roadmap'} className="text-saffron text-xs font-semibold hover:underline">
                 View Full Roadmap →
               </Link>
             )}
@@ -158,7 +158,7 @@ export default function Profile() {
                     <div className="text-gray-400 text-xs mt-0.5 line-clamp-1">{rm.overview}</div>
                   </div>
                   <Link
-                    to="/roadmap"
+                    to={profile?.class_level === 'class10' ? '/class10/roadmap' : '/class12/roadmap'}
                     state={{ roadmap: rm }}
                     className="text-saffron text-xs font-semibold hover:underline ml-3 flex-shrink-0"
                   >
@@ -171,7 +171,7 @@ export default function Profile() {
             <div className="text-center py-8">
               <div className="text-4xl mb-3">🗺️</div>
               <p className="text-gray-400 text-sm mb-4">No roadmaps generated yet. Get your guidance first!</p>
-              <Link to="/result" className="btn-outline text-sm py-2.5 px-6">
+              <Link to={profile?.class_level === 'class10' ? '/class10/result' : '/class12/result'} className="btn-outline text-sm py-2.5 px-6">
                 Go to Results
               </Link>
             </div>

@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useLocation, Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import AuthModal from '../components/AuthModal'
 
@@ -138,6 +138,27 @@ function DataGroundingBadge({ grounded }) {
   )
 }
 
+// ─── Confidence Badge ────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ label, reason }) {
+  if (!label) return null
+  const colors = {
+    High:   'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+    Medium: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+    Low:    'text-rose-400 bg-rose-500/10 border-rose-500/20',
+  }
+  const icons = { High: '🎯', Medium: '⚡', Low: '📝' }
+  return (
+    <div
+      className={`inline-flex items-center gap-2 text-xs font-semibold border rounded-full px-3 py-1.5 ${colors[label] || colors.Medium}`}
+      title={reason}
+    >
+      <span>{icons[label] || '⚡'}</span>
+      {label} Confidence
+    </div>
+  )
+}
+
 // ─── Result display components ────────────────────────────────────────────────
 
 function SummaryCard({ summary, name }) {
@@ -195,7 +216,9 @@ function OptionCard({ option, index, formData, collegesData }) {
       {/* Grid: colleges + cost */}
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
-          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">🏫 Realistic Colleges</p>
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">
+            {formData?.classLevel === 'class10' ? '🏫 Target Paths / Institutions' : '🏫 Realistic Colleges'}
+          </p>
           <ul className="space-y-2">
             {(option.realistic_colleges || []).map((c, i) => {
               const dbEntry = collegesData?.[c]
@@ -250,9 +273,20 @@ function OptionCard({ option, index, formData, collegesData }) {
         </div>
       </div>
 
+      {/* Backup Plan */}
+      {option.backup_plan && (
+        <div className="flex items-start gap-3 bg-emerald-500/8 border border-emerald-500/20 rounded-xl p-4">
+          <span className="text-emerald-400 text-lg flex-shrink-0 mt-0.5">🛡️</span>
+          <div>
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider mb-1">Backup Plan</p>
+            <p className="text-emerald-200 text-sm leading-relaxed">{option.backup_plan}</p>
+          </div>
+        </div>
+      )}
+
       {/* Roadmap CTA */}
       <Link
-        to="/roadmap"
+        to={`/${formData?.classLevel || 'class12'}/roadmap`}
         state={{ option, formData }}
         className="btn-primary mt-2 py-3.5 text-sm flex items-center justify-center gap-2 group/btn"
       >
@@ -422,16 +456,27 @@ function MentorTeaserBox({ mentor }) {
 }
 
 export default function Result() {
+  const { classLevel = 'class12' } = useParams()
   const { state } = useLocation()
-  const savedRaw  = localStorage.getItem('aageKyaFormData')
-  const formData  = state?.formData ?? (savedRaw ? JSON.parse(savedRaw) : null)
+
+  // Memoize formData — prevents fetchGuidance from firing on every render
+  const formData = useMemo(() => {
+    const savedRaw = localStorage.getItem('aageKyaFormData')
+    const rawForm  = state?.formData ?? (savedRaw ? JSON.parse(savedRaw) : null)
+    return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classLevel, state?.formData])
+
 
   const [status,   setStatus]   = useState('idle')   // idle | loading | success | error
   const [result,   setResult]   = useState(null)
   const [errorMsg, setErrMsg]   = useState('')
   const [session,  setSession]  = useState(null)
   const [isAuthOpen, setAuthOpen] = useState(false)
+  const [parentMode, setParentMode] = useState(false)
   const [matchedMentor, setMatchedMentor] = useState(null)
+  const [scenarioSaved, setScenarioSaved] = useState(false)
+  const [scenarioSaving, setScenarioSaving] = useState(false)
 
   // Track auth state to know if we should show the save banner
   useEffect(() => {
@@ -440,16 +485,21 @@ export default function Result() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Match a mentor based on student stream
+  // Match a mentor based on student stream or class level
   useEffect(() => {
-    if (!formData?.stream) return
+    if (!formData) return
     fetch('http://localhost:5000/api/mentors')
       .then((res) => {
         if (!res.ok) throw new Error('API failed')
         return res.json()
       })
       .then((data) => {
-        const match = data.find((m) => m.stream_category === formData.stream && m.available)
+        const match = data.find((m) => {
+          if (formData.classLevel === 'class10') {
+            return m.stream_category === 'Class 10 / Stream Selection' && m.available
+          }
+          return m.stream_category === formData.stream && m.available
+        })
         if (match) {
           setMatchedMentor(match)
         }
@@ -486,6 +536,7 @@ export default function Result() {
     setStatus('loading')
     setResult(null)
     setErrMsg('')
+    setScenarioSaved(false)
     try {
       const data = await callGemini(formData)
       setResult(data)
@@ -499,6 +550,21 @@ export default function Result() {
       }
     }
   }, [formData])
+
+  const saveScenario = async () => {
+    if (!session || !result || !formData) return
+    setScenarioSaving(true)
+    try {
+      const label = `${formData.stream || 'My Path'} — ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+      await fetch('http://localhost:5000/api/scenarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ label, formData, guidanceResult: result }),
+      })
+      setScenarioSaved(true)
+    } catch { }
+    finally { setScenarioSaving(false) }
+  }
 
   useEffect(() => {
     fetchGuidance()
@@ -557,9 +623,48 @@ export default function Result() {
               <SaveResultsBanner onSave={() => setAuthOpen(true)} />
             )}
 
-            {/* Data grounding badge */}
-            <div className="flex justify-end">
-              <DataGroundingBadge grounded={result.grounded} />
+            {/* Print and Parent Mode preview bar */}
+            <div className="flex flex-wrap justify-between items-center gap-3 no-print bg-white/4 border border-white/8 rounded-2xl p-4">
+              <button
+                onClick={() => setParentMode(!parentMode)}
+                className={`text-xs px-4 py-2.5 rounded-xl border font-semibold transition-all flex items-center gap-1.5
+                  ${parentMode
+                    ? 'bg-saffron/15 border-saffron text-saffron'
+                    : 'bg-navy-800 border-white/10 text-gray-400 hover:border-saffron/30 hover:text-white'
+                  }`}
+              >
+                <span>🛡️</span>
+                <span>{parentMode ? 'Back to Student View' : 'Parent Mode View'}</span>
+              </button>
+
+              <Link
+                to={`/${formData?.classLevel || 'class12'}/result/print`}
+                className="btn-outline text-xs py-2.5 px-4 flex items-center gap-1.5 hover:bg-white/5"
+              >
+                <span>🖨️</span>
+                <span>Print / Save PDF</span>
+              </Link>
+            </div>
+
+            {/* Data grounding + confidence badges + save scenario */}
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <div className="flex flex-wrap gap-2">
+                <DataGroundingBadge grounded={result.grounded} />
+                <ConfidenceBadge label={result.confidence_label} reason={result.confidence_reason} />
+              </div>
+              {session && (
+                <button
+                  onClick={saveScenario}
+                  disabled={scenarioSaving || scenarioSaved}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition-all flex items-center gap-1.5
+                    ${scenarioSaved
+                      ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                      : 'border-white/15 text-gray-400 hover:text-white hover:border-saffron/40'
+                    }`}
+                >
+                  {scenarioSaved ? '✓ Scenario Saved' : scenarioSaving ? 'Saving…' : '+ Save as Scenario'}
+                </button>
+              )}
             </div>
 
             {/* 1 — Summary */}
@@ -570,12 +675,39 @@ export default function Result() {
 
             {/* 2 — Options */}
             {(result.options || []).map((opt, i) => (
-              <OptionCard key={i} option={opt} index={i} formData={formData} collegesData={result.colleges_data} />
+              <div key={i} className="space-y-3">
+                <OptionCard option={opt} index={i} formData={formData} collegesData={result.colleges_data} />
+                {parentMode && (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5 sm:p-6 animate-slide-up">
+                    <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                      <span>👨‍👩‍👧</span>
+                      <span>Why This Fits Your Child</span>
+                    </p>
+                    <p className="text-gray-300 text-sm leading-relaxed">
+                      This recommendation directly aligns with their subject interest in <strong className="text-white">"{formData?.interests}"</strong> and matches their academic performance of <strong className="text-white">{formData?.marks}%</strong>.
+                    </p>
+                  </div>
+                )}
+              </div>
             ))}
 
-            {/* 3 — Scholarship */}
-            {result.scholarship_to_check && (
-              <ScholarshipBox scholarship={result.scholarship_to_check} scholarshipData={result.scholarship_data} />
+            {/* 3 — Scholarships List */}
+            {result.scholarships_list && result.scholarships_list.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2 pt-2">
+                  <span className="text-xl">🎓</span>
+                  <h3 className="font-display font-bold text-lg text-white">Matching Scholarships Sourced For You</h3>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {result.scholarships_list.map((s, idx) => (
+                    <ScholarshipBox key={idx} scholarship={s.name} scholarshipData={s} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              result.scholarship_to_check && (
+                <ScholarshipBox scholarship={result.scholarship_to_check} scholarshipData={result.scholarship_data} />
+              )
             )}
 
             {/* 3.5 — Recommended Mentor Connect */}

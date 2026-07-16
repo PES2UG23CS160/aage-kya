@@ -8,8 +8,12 @@ import Onboarding from './pages/Onboarding'
 import Result from './pages/Result'
 import Mentors from './pages/Mentors'
 import Roadmap from './pages/Roadmap'
-import Profile from './pages/Profile'
+import Dashboard from './pages/Dashboard'
+import PrintReport from './pages/PrintReport'
 import MentorDashboard from './pages/MentorDashboard'
+import OfficialReadiness from './pages/OfficialReadiness'
+import Scenarios from './pages/Scenarios'
+import QABoard from './pages/QABoard'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -26,11 +30,20 @@ function AnimatedRoutes() {
       <Routes location={location}>
         <Route path="/"                  element={<Landing />} />
         <Route path="/onboarding"        element={<Onboarding />} />
+        <Route path="/:classLevel/onboarding" element={<Onboarding />} />
         <Route path="/result"            element={<Result />} />
+        <Route path="/:classLevel/result" element={<Result />} />
         <Route path="/mentors"           element={<Mentors />} />
         <Route path="/roadmap"           element={<Roadmap />} />
-        <Route path="/profile"           element={<Profile />} />
+        <Route path="/:classLevel/roadmap" element={<Roadmap />} />
+        <Route path="/profile"           element={<Dashboard />} />
+        <Route path="/dashboard"         element={<Dashboard />} />
+        <Route path="/result/print"      element={<PrintReport />} />
+        <Route path="/:classLevel/result/print" element={<PrintReport />} />
         <Route path="/mentor-dashboard"  element={<MentorDashboard />} />
+        <Route path="/official-readiness" element={<OfficialReadiness />} />
+        <Route path="/scenarios"         element={<Scenarios />} />
+        <Route path="/qa"                element={<QABoard />} />
       </Routes>
     </div>
   )

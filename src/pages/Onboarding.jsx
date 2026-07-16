@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import PrivacyConsentModal, { useConsent } from '../components/PrivacyConsentModal'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -35,17 +36,25 @@ const INITIAL_FORM = {
   fullName: '', state: '', board: '', stream: '', marks: '',
   incomeRange: '', firstGenCollege: null, preferredCities: [],
   interests: '', biggestFear: '',
+  // Class 10 extensions
+  classLevel: 'class12',
+  parentPressure: null,
+  parentExpectations: '',
+  riskComfort: '',
+  coachingAccess: null,
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-function validate(step, form) {
+function validate(step, form, classLevel = 'class12') {
   const e = {}
   if (step === 1) {
     if (!form.fullName.trim())    e.fullName = 'Please enter your name.'
     if (!form.state)              e.state    = 'Please select your state.'
     if (!form.board)              e.board    = 'Please select your board.'
-    if (!form.stream)             e.stream   = 'Please pick your stream.'
+    if (classLevel === 'class12' && !form.stream) {
+      e.stream = 'Please pick your stream.'
+    }
     if (!form.marks || isNaN(form.marks) || +form.marks < 0 || +form.marks > 100)
       e.marks = 'Enter a valid percentage between 0 and 100.'
   }
@@ -55,8 +64,20 @@ function validate(step, form) {
     if (form.preferredCities.length === 0) e.preferredCities = 'Pick at least one option.'
   }
   if (step === 3) {
-    if (!form.interests.trim())   e.interests   = 'Please fill this in — it really matters.'
-    if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
+    if (classLevel === 'class10') {
+      if (!form.stream)             e.stream = 'Please pick which stream you are leaning towards.'
+      if (!form.interests.trim())   e.interests = 'Please fill this in — it really matters.'
+      if (form.parentPressure === null) e.parentPressure = 'Please select Yes or No.'
+      if (form.parentPressure === true && !form.parentExpectations.trim()) {
+        e.parentExpectations = 'Please share what stream/career your parents expect.'
+      }
+      if (!form.riskComfort)        e.riskComfort = 'Please pick your risk comfort preference.'
+      if (form.coachingAccess === null) e.coachingAccess = 'Please select Yes or No.'
+      if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
+    } else {
+      if (!form.interests.trim())   e.interests   = 'Please fill this in — it really matters.'
+      if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
+    }
   }
   return e
 }
@@ -200,7 +221,7 @@ function CityCard({ option, selected, onToggle }) {
 
 // ─── Step 1 ───────────────────────────────────────────────────────────────────
 
-function Step1({ form, setForm, errors }) {
+function Step1({ form, setForm, errors, classLevel = 'class12' }) {
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
   const streams = ['Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities']
 
@@ -232,17 +253,21 @@ function Step1({ form, setForm, errors }) {
         />
       </div>
 
-      <PillGroup
-        label="Stream" required
-        options={streams}
-        value={form.stream}
-        onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
-        error={errors.stream}
-        hint="Pick the stream you appeared for — it's okay if you wish it was different."
-      />
+      {classLevel === 'class12' && (
+        <PillGroup
+          label="Stream" required
+          options={streams}
+          value={form.stream}
+          onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
+          error={errors.stream}
+          hint="Pick the stream you appeared for — it's okay if you wish it was different."
+        />
+      )}
 
       <div>
-        <Label required>Marks Percentage</Label>
+        <Label required>
+          {classLevel === 'class10' ? 'Marks Percentage (9th Grade or Board Pre-marks)' : 'Marks Percentage'}
+        </Label>
         <div className="relative">
           <input
             id="marks" type="number" min="0" max="100"
@@ -275,7 +300,7 @@ function Step1({ form, setForm, errors }) {
 
 // ─── Step 2 ───────────────────────────────────────────────────────────────────
 
-function Step2({ form, setForm, errors }) {
+function Step2({ form, setForm, errors, classLevel = 'class12' }) {
   const toggleCity = (val) =>
     setForm((f) => ({
       ...f,
@@ -306,7 +331,9 @@ function Step2({ form, setForm, errors }) {
       />
 
       <div>
-        <Label required>Where are you open to studying?</Label>
+        <Label required>
+          {classLevel === 'class10' ? 'Where are you open to going for high school or coaching?' : 'Where are you open to studying?'}
+        </Label>
         <p className="field-hint mb-3">Select all that apply. You can always change your mind later — this is just for now.</p>
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {CITY_OPTIONS.map((opt) => (
@@ -426,7 +453,7 @@ function VoiceInputButton({ onTranscribe, isTranscribing }) {
   )
 }
 
-function Step3({ form, setForm, errors }) {
+function Step3({ form, setForm, errors, classLevel = 'class12' }) {
   const MAX = 500
   const set = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value.slice(0, MAX) }))
@@ -472,18 +499,38 @@ function Step3({ form, setForm, errors }) {
   return (
     <div className="space-y-7">
 
+      {classLevel === 'class10' && (
+        <PillGroup
+          label="Which stream are you leaning towards right now?"
+          required
+          options={['Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities', 'Undecided']}
+          value={form.stream}
+          onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
+          error={errors.stream}
+          hint="It's okay if you're completely undecided — we will help you explore."
+        />
+      )}
+
       <div>
         <div className="flex flex-wrap justify-between items-center gap-2 mb-1.5">
-          <Label required>What are you actually interested in?</Label>
+          <Label required>
+            {classLevel === 'class10' ? 'What subjects or topics do you enjoy the most and why?' : 'What are you actually interested in?'}
+          </Label>
           <VoiceInputButton
             onTranscribe={handleTranscribe('interests')}
             isTranscribing={transcribingInterests}
           />
         </div>
-        <Hint>Hobbies, things you google at 2am, subjects you liked, stuff you do for fun — literally anything. There are no wrong answers here.</Hint>
+        <Hint>
+          {classLevel === 'class10' 
+            ? 'Tell us about specific subjects (e.g., Science, History, Drawing), specific topics you liked, or hobbies you spend time on.'
+            : 'Hobbies, things you google at 2am, subjects you liked, stuff you do for fun — literally anything. There are no wrong answers here.'}
+        </Hint>
         <textarea
           id="interests" rows={4}
-          placeholder="e.g. I love designing posters and spend hours on YouTube watching tech reviews. I also really like debating with people..."
+          placeholder={classLevel === 'class10' 
+            ? "e.g. I really like biology and learning about human anatomy, but I also enjoy drawing and playing video games..."
+            : "e.g. I love designing posters and spend hours on YouTube watching tech reviews. I also really like debating with people..."}
           value={form.interests} onChange={set('interests')}
           className={`${errors.interests ? invalid : normal} resize-none mt-2`}
         />
@@ -495,9 +542,59 @@ function Step3({ form, setForm, errors }) {
         </div>
       </div>
 
+      {classLevel === 'class10' && (
+        <>
+          <YesNoToggle
+            label="Do you feel pressure or specific expectations from parents about your stream selection?"
+            required
+            value={form.parentPressure}
+            onChange={(v) => setForm((f) => ({ ...f, parentPressure: v, parentExpectations: v ? f.parentExpectations : '' }))}
+            error={errors.parentPressure}
+            hint="Indian parents often push for Science (PCM/PCB) or Commerce. We will help you navigate this honestly."
+          />
+
+          {form.parentPressure === true && (
+            <div>
+              <Label required>What do your parents want or expect you to study?</Label>
+              <textarea
+                id="parentExpectations" rows={3}
+                placeholder="e.g. They want me to take PCM and prepare for JEE to become a software engineer, but I'm not good at math..."
+                value={form.parentExpectations} onChange={set('parentExpectations')}
+                className={`${errors.parentExpectations ? invalid : normal} resize-none mt-2`}
+              />
+              <FieldError msg={errors.parentExpectations} />
+            </div>
+          )}
+
+          <PillGroup
+            label="Risk Comfort: What kind of future path do you prefer?"
+            required
+            options={[
+              { value: 'safe', label: 'Safe Path (Stable, traditional options)' },
+              { value: 'exploratory', label: 'Exploratory Path (Emerging tech, creative, okay with risk)' }
+            ]}
+            value={form.riskComfort}
+            onToggle={(v) => setForm((f) => ({ ...f, riskComfort: v }))}
+            error={errors.riskComfort}
+            hint="Safe path leans on traditional degrees. Exploratory path targets design, humanities, newer vocational fields, or startups."
+          />
+
+          <YesNoToggle
+            label="Do you have access to local or online coaching classes (for JEE, NEET, etc.) nearby?"
+            required
+            value={form.coachingAccess}
+            onChange={(v) => setForm((f) => ({ ...f, coachingAccess: v }))}
+            error={errors.coachingAccess}
+            hint="Knowing this helps us guide your preparation strategy."
+          />
+        </>
+      )}
+
       <div>
         <div className="flex flex-wrap justify-between items-center gap-2 mb-1.5">
-          <Label required>What is your biggest fear about what comes next?</Label>
+          <Label required>
+            {classLevel === 'class10' ? 'What is your biggest fear about stream selection?' : 'What is your biggest fear about what comes next?'}
+          </Label>
           <VoiceInputButton
             onTranscribe={handleTranscribe('biggestFear')}
             isTranscribing={transcribingFear}
@@ -506,7 +603,9 @@ function Step3({ form, setForm, errors }) {
         <Hint>Be honest. This helps us give you real advice, not generic stuff. Your answer stays private — we don&apos;t share it with anyone.</Hint>
         <textarea
           id="biggestFear" rows={4}
-          placeholder="e.g. I'm scared of picking the wrong degree and wasting 4 years. My parents want me to be an engineer but I have no idea if I'll like it..."
+          placeholder={classLevel === 'class10'
+            ? "e.g. I'm scared of taking science and failing because it gets too hard, or taking arts and having people think I'm weak in studies..."
+            : "e.g. I'm scared of picking the wrong degree and wasting 4 years. My parents want me to be an engineer but I have no idea if I'll like it..."}
           value={form.biggestFear} onChange={set('biggestFear')}
           className={`${errors.biggestFear ? invalid : normal} resize-none mt-2`}
         />
@@ -533,16 +632,22 @@ function Step3({ form, setForm, errors }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Onboarding() {
+  const { classLevel = 'class12' } = useParams()
   const [step, setStep]     = useState(1)
-  const [form, setForm]     = useState(INITIAL_FORM)
+  const [form, setForm]     = useState(() => ({ ...INITIAL_FORM, classLevel }))
   const [errors, setErrors] = useState({})
   const navigate = useNavigate()
+  const { consentGiven, giveConsent } = useConsent()
+
+  useEffect(() => {
+    setForm((f) => ({ ...f, classLevel }))
+  }, [classLevel])
 
   const total       = STEPS.length
   const currentStep = STEPS[step - 1]
 
   const handleNext = () => {
-    const errs = validate(step, form)
+    const errs = validate(step, form, classLevel)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       const firstId = Object.keys(errs)[0]
@@ -554,7 +659,7 @@ export default function Onboarding() {
       setStep((s) => s + 1)
     } else {
       localStorage.setItem('aageKyaFormData', JSON.stringify(form))
-      navigate('/result', { state: { formData: form } })
+      navigate(classLevel === 'class10' ? '/class10/result' : '/class12/result', { state: { formData: form } })
     }
   }
 
@@ -565,6 +670,9 @@ export default function Onboarding() {
 
   return (
     <main className="pt-16 min-h-screen pb-12">
+      {/* Privacy consent gate — shown before any form renders */}
+      {!consentGiven && <PrivacyConsentModal onConsent={giveConsent} />}
+
       <div className="max-w-2xl mx-auto px-4 sm:px-6">
 
         {/* ── Progress tracker ── */}
@@ -628,9 +736,9 @@ export default function Onboarding() {
           </div>
 
           {/* Step content */}
-          {step === 1 && <Step1 form={form} setForm={setForm} errors={errors} />}
-          {step === 2 && <Step2 form={form} setForm={setForm} errors={errors} />}
-          {step === 3 && <Step3 form={form} setForm={setForm} errors={errors} />}
+          {step === 1 && <Step1 form={form} setForm={setForm} errors={errors} classLevel={classLevel} />}
+          {step === 2 && <Step2 form={form} setForm={setForm} errors={errors} classLevel={classLevel} />}
+          {step === 3 && <Step3 form={form} setForm={setForm} errors={errors} classLevel={classLevel} />}
 
           {/* ── Navigation ── */}
           <div className="mt-9 pt-6 border-t border-white/8 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
