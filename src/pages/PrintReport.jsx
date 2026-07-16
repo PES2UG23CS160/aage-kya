@@ -8,19 +8,88 @@ export default function PrintReport() {
   const { user, profile, loading: authLoading } = useAuth()
   const navigate = useNavigate()
 
-  const [guidance, setGuidance] = useState(null)
+  // Initialize from localStorage fallbacks immediately
+  const [guidance, setGuidance] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aageKyaLastResult')
+      return saved ? JSON.parse(saved) : null
+    } catch { return null }
+  })
+  const [activeProfile, setActiveProfile] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aageKyaLastFormData') || localStorage.getItem('aageKyaFormData')
+      if (saved) {
+        const form = JSON.parse(saved)
+        return {
+          full_name: form.fullName || 'Student',
+          marks: form.marks || '0',
+          board: form.board || '',
+          state: form.state || '',
+          stream: form.stream || '',
+          risk_comfort: form.riskComfort || '',
+          interests: form.interests || '',
+          biggest_fear: form.biggestFear || '',
+          class_level: form.classLevel || classLevel
+        }
+      }
+      return null
+    } catch { return null }
+  })
   const [matchedMentor, setMatchedMentor] = useState(null)
-  const [scholarshipsList, setScholarshipsList] = useState([])
+  const [scholarshipsList, setScholarshipsList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aageKyaLastResult')
+      if (saved) {
+        const resData = JSON.parse(saved)
+        return resData.scholarships_list || []
+      }
+      return []
+    } catch { return [] }
+  })
   const [loading, setLoading] = useState(true)
 
-  // Redirect if not logged in
+  // Redirect if not logged in AND no local fallback data is available
   useEffect(() => {
-    if (!authLoading && !user) navigate('/')
+    if (!authLoading && !user) {
+      const hasLocalData = localStorage.getItem('aageKyaLastResult') && (localStorage.getItem('aageKyaLastFormData') || localStorage.getItem('aageKyaFormData'))
+      if (!hasLocalData) {
+        navigate('/')
+      }
+    }
   }, [user, authLoading, navigate])
 
   // Load report data
   useEffect(() => {
-    if (!user || !profile) return
+    if (!user || !profile) {
+      // For anonymous users, still attempt to fetch matching mentor based on stream in local state
+      const fetchMentorOnly = async () => {
+        const streamToMatch = activeProfile?.stream || 'Class 10 / Stream Selection'
+        try {
+          const res = await fetch('http://localhost:5000/api/mentors')
+          if (res.ok) {
+            const mentors = await res.json()
+            const match = mentors.find(m => {
+              if (classLevel === 'class10') {
+                return m.stream_category === 'Class 10 / Stream Selection' && m.available
+              }
+              return m.stream_category === streamToMatch && m.available
+            })
+            setMatchedMentor(match || null)
+          }
+        } catch (err) {
+          console.error('Error fetching mentor for anonymous print:', err)
+        } finally {
+          setLoading(false)
+        }
+      }
+      if (activeProfile) {
+        fetchMentorOnly()
+      } else {
+        setLoading(false)
+      }
+      return
+    }
+
     const load = async () => {
       setLoading(true)
       try {
@@ -33,25 +102,36 @@ export default function PrintReport() {
           .limit(1)
           .maybeSingle()
 
-        setGuidance(g)
+        if (g) {
+          setGuidance(g)
+          setScholarshipsList(g.scholarships_list || [])
+        }
 
-        if (profile) {
-          // Fetch matching mentor
-          const streamToMatch = profile.stream || 'Class 10 / Stream Selection'
-          const res = await fetch('http://localhost:5000/api/mentors')
-          if (res.ok) {
-            const mentors = await res.json()
-            const match = mentors.find(m => {
-              if (classLevel === 'class10') {
-                return m.stream_category === 'Class 10 / Stream Selection' && m.available
-              }
-              return m.stream_category === streamToMatch && m.available
-            })
-            setMatchedMentor(match || null)
-          }
+        // Set activeProfile from Supabase profile
+        setActiveProfile({
+          full_name: profile.full_name || 'Student',
+          marks: profile.marks || '0',
+          board: profile.board || '',
+          state: profile.state || '',
+          stream: profile.stream || '',
+          risk_comfort: profile.risk_comfort || '',
+          interests: profile.interests || '',
+          biggest_fear: profile.biggest_fear || '',
+          class_level: profile.class_level || classLevel
+        })
 
-          // Pull scholarships directly from already-fetched guidance result row
-          setScholarshipsList(g?.scholarships_list || [])
+        // Fetch matching mentor
+        const streamToMatch = profile.stream || 'Class 10 / Stream Selection'
+        const res = await fetch('http://localhost:5000/api/mentors')
+        if (res.ok) {
+          const mentors = await res.json()
+          const match = mentors.find(m => {
+            if (classLevel === 'class10') {
+              return m.stream_category === 'Class 10 / Stream Selection' && m.available
+            }
+            return m.stream_category === streamToMatch && m.available
+          })
+          setMatchedMentor(match || null)
         }
       } catch (err) {
         console.error('Error loading report for print:', err)
@@ -60,7 +140,7 @@ export default function PrintReport() {
       }
     }
     load()
-  }, [user, profile, classLevel])
+  }, [user, profile, classLevel, activeProfile?.stream])
 
   // Auto trigger print dialog on load once content is loaded
   useEffect(() => {
@@ -83,7 +163,7 @@ export default function PrintReport() {
     )
   }
 
-  if (!user || !profile || !guidance) {
+  if (!activeProfile || !guidance) {
     return (
       <main className="pt-24 pb-16 min-h-screen flex items-center justify-center bg-[#0A0F1E] text-white">
         <div className="text-center">
@@ -197,7 +277,7 @@ export default function PrintReport() {
                 <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider block">Assessment Date</span>
                 <span className="text-white text-sm font-semibold block mt-0.5">{printDate}</span>
                 <span className="text-saffron text-xs font-bold block mt-1 uppercase tracking-widest">
-                  {profile.class_level === 'class10' ? 'Class 10 Selection' : 'Class 12 Pathway'}
+                  {activeProfile.class_level === 'class10' ? 'Class 10 Selection' : 'Class 12 Pathway'}
                 </span>
               </div>
             </div>
@@ -208,30 +288,30 @@ export default function PrintReport() {
               <div className="bg-white/4 border border-white/8 rounded-2xl p-6 grid sm:grid-cols-2 md:grid-cols-4 gap-6">
                 <div>
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">Student Name</span>
-                  <span className="text-white text-sm font-bold block mt-0.5">{profile.full_name}</span>
+                  <span className="text-white text-sm font-bold block mt-0.5">{activeProfile.full_name}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">Academic Marks</span>
-                  <span className="text-white text-sm font-bold block mt-0.5">{profile.marks}% ({profile.board})</span>
+                  <span className="text-white text-sm font-bold block mt-0.5">{activeProfile.marks}% ({activeProfile.board})</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">State / Region</span>
-                  <span className="text-white text-sm font-bold block mt-0.5">{profile.state}</span>
+                  <span className="text-white text-sm font-bold block mt-0.5">{activeProfile.state}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">Risk Profile</span>
-                  <span className="text-white text-sm font-bold block mt-0.5 capitalize">{profile.risk_comfort || 'Safe'}</span>
+                  <span className="text-white text-sm font-bold block mt-0.5 capitalize">{activeProfile.risk_comfort || 'Safe'}</span>
                 </div>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4 mt-4">
                 <div className="bg-white/4 border border-white/8 rounded-xl p-4">
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">Interests & Drivers</span>
-                  <p className="text-gray-300 text-xs leading-relaxed mt-1.5">"{profile.interests}"</p>
+                  <p className="text-gray-300 text-xs leading-relaxed mt-1.5">"{activeProfile.interests}"</p>
                 </div>
                 <div className="bg-white/4 border border-white/8 rounded-xl p-4">
                   <span className="text-[10px] text-gray-500 uppercase font-bold block">Biggest Concern</span>
-                  <p className="text-gray-300 text-xs leading-relaxed mt-1.5">"{profile.biggest_fear}"</p>
+                  <p className="text-gray-300 text-xs leading-relaxed mt-1.5">"{activeProfile.biggest_fear}"</p>
                 </div>
               </div>
             </div>

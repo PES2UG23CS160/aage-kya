@@ -540,6 +540,8 @@ export default function Result() {
     try {
       const data = await callGemini(formData)
       setResult(data)
+      localStorage.setItem('aageKyaLastResult', JSON.stringify(data))
+      localStorage.setItem('aageKyaLastFormData', JSON.stringify(formData))
       setStatus('success')
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
