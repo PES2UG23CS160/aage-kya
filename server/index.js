@@ -10,6 +10,8 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '.env'), override: true })
 
+import { HISTORICAL_CUTOFFS } from './cutoffsData.js'
+
 const app = express()
 app.set('trust proxy', 1) // Trust first proxy (Railway, Render, Vercel)
 
@@ -573,6 +575,191 @@ async function callGemini(prompt, { studentId = null, callType = 'guidance' } = 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
 })
+
+// 🔮 Rank Predictor API Endpoints
+
+// 1. Get unique colleges and courses filtered by exam
+app.get('/api/predictor/options', async (req, res) => {
+  const { exam } = req.query
+  if (!exam) {
+    return res.status(400).json({ error: 'Missing exam parameter' })
+  }
+
+  let cutoffs = []
+  try {
+    const { data, error } = await supabase
+      .from('college_cutoffs')
+      .select('college_name, course')
+      .eq('exam', exam)
+    if (error) throw error
+    cutoffs = data || []
+  } catch (err) {
+    console.warn('Supabase fetch failed for options, using static fallback:', err.message)
+    cutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam)
+  }
+
+  // Get unique colleges and courses
+  const colleges = [...new Set(cutoffs.map(c => c.college_name))].sort()
+  const courses = [...new Set(cutoffs.map(c => c.course))].sort()
+
+  res.json({ colleges, courses })
+})
+
+// 2. Predict colleges reachable at a specific rank
+app.get('/api/predictor/predict', async (req, res) => {
+  const { exam, rank: rankStr, category, state } = req.query
+  if (!exam || !rankStr || !category) {
+    return res.status(400).json({ error: 'Missing required parameters: exam, rank, category' })
+  }
+
+  const rank = parseInt(rankStr, 10)
+  if (isNaN(rank)) {
+    return res.status(400).json({ error: 'Rank must be a valid number' })
+  }
+
+  let allCutoffs = []
+  try {
+    const { data, error } = await supabase
+      .from('college_cutoffs')
+      .select('*')
+      .eq('exam', exam)
+      .eq('category', category)
+    if (error) throw error
+    allCutoffs = data || []
+  } catch (err) {
+    console.warn('Supabase fetch failed for predict, using static fallback:', err.message)
+    allCutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam && c.category === category)
+  }
+
+  // Group by college + course
+  const grouped = {}
+  for (const row of allCutoffs) {
+    const key = `${row.college_name}::${row.course}`
+    if (!grouped[key]) {
+      grouped[key] = []
+    }
+    grouped[key].push(row)
+  }
+
+  const results = []
+  for (const [key, records] of Object.entries(grouped)) {
+    const [collegeName, courseName] = key.split('::')
+    
+    // Sort records by year descending to get the latest year
+    records.sort((a, b) => b.year - a.year)
+    const latestRecord = records[0]
+
+    if (!latestRecord) continue
+
+    const closing2025 = latestRecord.closing_rank
+    let likelihood = 'Unlikely'
+
+    if (rank <= closing2025 * 0.8) {
+      likelihood = 'Safe'
+    } else if (rank <= closing2025) {
+      likelihood = 'Likely'
+    } else if (rank <= closing2025 * 1.1) {
+      likelihood = 'Borderline'
+    }
+
+    // Build trend list sorted by year ascending
+    const trends = records
+      .map(r => ({ year: r.year, closing_rank: r.closing_rank }))
+      .sort((a, b) => a.year - b.year)
+
+    results.push({
+      college_name: collegeName,
+      course: courseName,
+      exam,
+      category,
+      likelihood,
+      closing_2025: closing2025,
+      trends
+    })
+  }
+
+  // Sort: Safe first, then Likely, then Borderline, then Unlikely.
+  const likelihoodOrder = { 'Safe': 1, 'Likely': 2, 'Borderline': 3, 'Unlikely': 4 }
+  results.sort((a, b) => {
+    const valA = likelihoodOrder[a.likelihood]
+    const valB = likelihoodOrder[b.likelihood]
+    if (valA !== valB) return valA - valB
+    return a.college_name.localeCompare(b.college_name)
+  })
+
+  res.json({ results })
+})
+
+// 3. Simulate chances for a specific college and course
+app.get('/api/predictor/simulate', async (req, res) => {
+  const { college, course, exam, rank: rankStr, category } = req.query
+  if (!college || !course || !exam || !rankStr || !category) {
+    return res.status(400).json({ error: 'Missing required parameters for simulation' })
+  }
+
+  const rank = parseInt(rankStr, 10)
+  if (isNaN(rank)) {
+    return res.status(400).json({ error: 'Rank must be a valid number' })
+  }
+
+  let records = []
+  try {
+    const { data, error } = await supabase
+      .from('college_cutoffs')
+      .select('*')
+      .eq('college_name', college)
+      .eq('course', course)
+      .eq('exam', exam)
+      .eq('category', category)
+    if (error) throw error
+    records = data || []
+  } catch (err) {
+    console.warn('Supabase fetch failed for simulate, using static fallback:', err.message)
+    records = HISTORICAL_CUTOFFS.filter(c => 
+      c.college_name === college && 
+      c.course === course && 
+      c.exam === exam && 
+      c.category === category
+    )
+  }
+
+  if (records.length === 0) {
+    return res.json({ 
+      found: false, 
+      message: `No historical cutoff data available for ${college} - ${course} under category ${category}.`
+    })
+  }
+
+  // Sort by year descending
+  records.sort((a, b) => b.year - a.year)
+  const latestRecord = records[0]
+  const closing2025 = latestRecord.closing_rank
+
+  let likelihood = 'Unlikely'
+  if (rank <= closing2025 * 0.8) {
+    likelihood = 'Safe'
+  } else if (rank <= closing2025) {
+    likelihood = 'Likely'
+  } else if (rank <= closing2025 * 1.1) {
+    likelihood = 'Borderline'
+  }
+
+  const trends = records
+    .map(r => ({ year: r.year, closing_rank: r.closing_rank }))
+    .sort((a, b) => a.year - b.year)
+
+  res.json({
+    found: true,
+    college,
+    course,
+    exam,
+    category,
+    likelihood,
+    closing_2025: closing2025,
+    trends
+  })
+})
+
 
 const validateGuidanceBody = (req, res, next) => {
   if (!req.body.formData) {

@@ -512,3 +512,24 @@ CREATE POLICY "feedback_self_read"
   ON public.course_feedback FOR SELECT
   USING (auth.uid() = author_id);
 
+-- ─── 10. College Cutoffs Table (Phase 4 Rank Predictor) ───
+-- Holds historical closing ranks per college, course, category, and year.
+CREATE TABLE IF NOT EXISTS public.college_cutoffs (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  college_name    TEXT        NOT NULL,
+  exam            TEXT        NOT NULL, -- 'JEE', 'NEET', 'KCET'
+  course          TEXT        NOT NULL, -- e.g. 'Computer Science Engineering', 'MBBS'
+  category        TEXT        NOT NULL, -- e.g. 'General', 'OBC', 'SC', 'ST'
+  year            INTEGER     NOT NULL, -- 2023, 2024, 2025
+  closing_rank    INTEGER     NOT NULL,
+  updated_at      TIMESTAMPTZ DEFAULT timezone('utc', now()),
+  UNIQUE(college_name, exam, course, category, year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_college_cutoffs_lookup ON public.college_cutoffs (exam, category, closing_rank);
+ALTER TABLE public.college_cutoffs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "cutoffs_public_read" ON public.college_cutoffs;
+CREATE POLICY "cutoffs_public_read"
+  ON public.college_cutoffs FOR SELECT
+  USING (true);

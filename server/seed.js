@@ -21,6 +21,8 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '.env'), override: true })
 
+import { HISTORICAL_CUTOFFS } from './cutoffsData.js'
+
 const supabaseUrl = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -491,6 +493,32 @@ async function seedMentors() {
   console.log(`\n  ✅ ${upserted} mentors upserted, ${errors} errors`)
 }
 
+async function seedCutoffs() {
+  console.log(`\n📚 Seeding ${HISTORICAL_CUTOFFS.length} college cutoffs...`)
+  let upserted = 0
+  let errors = 0
+
+  for (const cutoff of HISTORICAL_CUTOFFS) {
+    const { error } = await supabase
+      .from('college_cutoffs')
+      .upsert(cutoff, { onConflict: 'college_name,exam,course,category,year' })
+
+    if (error) {
+      if (error.message?.includes('relation "public.college_cutoffs" does not exist') || error.code === '42P01') {
+        console.warn(`\n  ⚠️  Table 'college_cutoffs' does not exist in Supabase yet. Predictor will fall back to static local data.`)
+        return
+      }
+      console.error(`  ❌ ${cutoff.college_name} (${cutoff.course}): ${error.message}`)
+      errors++
+    } else {
+      upserted++
+      process.stdout.write('.')
+    }
+  }
+
+  console.log(`\n  ✅ ${upserted} college cutoffs upserted, ${errors} errors`)
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -508,6 +536,7 @@ async function main() {
   await seedColleges()
   await seedScholarships()
   await seedMentors()
+  await seedCutoffs()
 
   console.log('\n✅ Seed complete! Your RAG and Mentor data is ready.')
   console.log('   Restart the server and test GET /api/health to confirm.')

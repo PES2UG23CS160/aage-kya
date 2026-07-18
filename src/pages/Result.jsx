@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import AuthModal from '../components/AuthModal'
 import CourseReality from '../components/CourseReality'
 import ExamDetails from '../components/ExamDetails'
+import RankPredictor from '../components/RankPredictor'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -723,10 +724,11 @@ export default function Result() {
               )
             )}
 
-            {/* 3.5 — Entrance Exam Details (Class 12 only) */}
+            {/* 3.5 — Entrance Exam Details & Rank Predictor (Class 12 only) */}
             {classLevel === 'class12' && (
-              <div className="pt-2">
+              <div className="space-y-4 pt-2">
                 <ExamDetails stream={formData?.stream} />
+                <RankPredictor formData={formData} />
               </div>
             )}
 
