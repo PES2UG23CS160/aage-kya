@@ -22,6 +22,7 @@ function VideoCard({ video }) {
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => setLoaded(true)}
           className="relative group w-full"
           style={{ paddingBottom: '56.25%' }}
@@ -129,7 +130,6 @@ const TABS = [
   { id: 'overview', label: '📋 Overview', icon: '📋' },
   { id: 'videos',   label: '▶️ Videos',   icon: '▶️' },
   { id: 'outcomes', label: '📊 Outcomes', icon: '📊' },
-  { id: 'voices',   label: '💬 Voices',   icon: '💬' },
 ]
 
 // ─── Main CourseReality component ─────────────────────────────────────────────
@@ -153,6 +153,7 @@ export default function CourseReality({ streamKey, compact = false }) {
     <div className="mt-3 animate-fade-in">
       {/* Trigger button */}
       <button
+        type="button"
         onClick={() => setOpen(o => !o)}
         className={`w-full flex items-center justify-between gap-3 rounded-xl border transition-all duration-200 group
           ${open
@@ -193,9 +194,10 @@ export default function CourseReality({ streamKey, compact = false }) {
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-white/8 overflow-x-auto">
+          <div className="flex border-b border-white/8 overflow-x-auto overflow-y-hidden">
             {TABS.map(tab => (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex-shrink-0 px-4 py-2.5 text-xs font-semibold transition-all border-b-2 -mb-px
@@ -300,15 +302,7 @@ export default function CourseReality({ streamKey, compact = false }) {
               </div>
             )}
 
-            {/* Student voices */}
-            {activeTab === 'voices' && (
-              <div className="animate-fade-in">
-                <p className="text-gray-400 text-xs mb-4">
-                  What students who went through <strong className="text-white">{data.label}</strong> have to say.
-                </p>
-                <StudentFeedback streamKey={streamKey} />
-              </div>
-            )}
+
 
           </div>
         </div>

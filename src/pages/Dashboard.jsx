@@ -432,7 +432,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Dynamic Tab Selector ── */}
-        <div className="flex border-b border-white/10 mb-8 overflow-x-auto pb-px gap-2">
+        <div className="flex border-b border-white/10 mb-8 overflow-x-auto overflow-y-hidden pb-px gap-2">
           {[
             { id: 'guidance', label: 'Guidance Hub', icon: '🧭' },
             { id: 'tracker', label: 'Goal Tracker', icon: '🎯', badge: tasksList.length > 0 ? `${completedCount}/${tasksList.length}` : null },

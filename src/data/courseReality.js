@@ -33,9 +33,8 @@ export const COURSE_REALITY = {
       'Many students feel burned out by Class 12 board pressure',
     ],
     videos: [
-      { id: 'cI11jARAb9s', title: 'A Day in the Life of a JEE Student', channel: 'Vedantu JEE' },
-      { id: 'p_yCgRaJnz4', title: 'Is PCM Really Worth It? Honest Reality', channel: 'Physics Wallah' },
-      { id: 'LDqSd_I4c70', title: 'Life After PCM — All Engineering Options', channel: 'Unacademy JEE' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
+      { id: '1w9jrQjHZ_g', title: 'Career Guidance for Students & Options', channel: 'Sunil Adhikari' },
     ],
     outcomes: [
       { label: 'B.Tech / Engineering', pct: 58 },
@@ -65,9 +64,8 @@ export const COURSE_REALITY = {
       'Biology is memory-heavy — requires consistent revision',
     ],
     videos: [
-      { id: 'qxSX5aN-FP8', title: 'NEET Reality — What No One Tells You', channel: 'Aakash Institute' },
-      { id: 'OWIAhDC9y2g', title: 'Life of a Medical Student in India', channel: 'Doctor Mike India' },
-      { id: 'zPzc7ZHGzCY', title: 'PCB Careers Beyond NEET & MBBS', channel: 'Career Counsellor India' },
+      { id: '32RMiE9hXY8', title: '10 High Salary PCB Courses Without NEET', channel: 'SciAstra' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'MBBS / BDS', pct: 25 },
@@ -96,8 +94,8 @@ export const COURSE_REALITY = {
       'Coaching for both JEE and NEET simultaneously is expensive and exhausting',
     ],
     videos: [
-      { id: 'QDQg3wVJf1Y', title: 'PCMB — Should You Take All 5 Subjects?', channel: 'Unacademy' },
-      { id: 'LDqSd_I4c70', title: 'PCMB Careers: What Are Your Options?', channel: 'Study IQ' },
+      { id: '32RMiE9hXY8', title: '10 High Salary PCB Courses Without NEET', channel: 'SciAstra' },
+      { id: '1w9jrQjHZ_g', title: 'Career Guidance for Science Students', channel: 'Sunil Adhikari' },
     ],
     outcomes: [
       { label: 'B.Tech / Engineering (JEE)', pct: 30 },
@@ -126,9 +124,8 @@ export const COURSE_REALITY = {
       'Less coding/tech exposure by default (you have to self-learn)',
     ],
     videos: [
-      { id: 'WXg5B5g5jDk', title: 'Commerce Stream — Complete Reality Check', channel: 'Commerce Baba' },
-      { id: 'c58R4e5-5_g', title: 'CA vs MBA vs CFA — Which to Choose?', channel: 'CA Wallah' },
-      { id: 'jqTqTkLjBHE', title: 'Life of a Commerce Student in India', channel: 'Study IQ Education' },
+      { id: 'Un3c8tK0b0E', title: 'Career Options After Class 12: Passion vs Parent expectations', channel: 'Commerce Baba' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'CA / CMA / CS (professional)', pct: 18 },
@@ -158,9 +155,8 @@ export const COURSE_REALITY = {
       'Career outcomes depend heavily on the specific subject chosen',
     ],
     videos: [
-      { id: 'FiURs_yhzSA', title: 'Arts Stream — Honest Reality in 2024', channel: 'Study IQ' },
-      { id: 'oLRCKGVHCf4', title: 'Careers in Humanities — What No One Tells You', channel: 'Career Counsellor' },
-      { id: 'AwBmXSFLqyM', title: 'UPSC & Arts Stream — Real Talk', channel: 'Unacademy UPSC' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
+      { id: 'Un3c8tK0b0E', title: 'Career Paths & Passion Discussion', channel: 'Commerce Baba' },
     ],
     outcomes: [
       { label: 'BA + Higher Studies / MA', pct: 30 },
@@ -191,8 +187,8 @@ export const COURSE_REALITY = {
       'Not all Diploma programs have equal quality — depends heavily on the college',
     ],
     videos: [
-      { id: 'NX0xdRcpxMQ', title: 'Diploma vs B.Tech — Which is Better?', channel: 'Technical Guftugu' },
-      { id: 'lNb_cqBxf_g', title: 'Polytechnic Life in India — Real Student Stories', channel: 'Polytechnic Help' },
+      { id: '-AnvHSB9vuQ', title: 'Polytechnic Course Full Details & Jobs', channel: 'Quick Support' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'Job after Diploma (technical)', pct: 40 },
@@ -222,8 +218,8 @@ export const COURSE_REALITY = {
       'Limited to specific trade — less flexibility than degree holders',
     ],
     videos: [
-      { id: 'G3CYAM72pYg', title: 'ITI Courses — Complete Guide for Students', channel: 'Career Launcher' },
-      { id: 'E6YwKFb-0oQ', title: 'Government Jobs After ITI — All Options', channel: 'Sarkari Result Guide' },
+      { id: '5AsmCgF_VnQ', title: 'ITI Course Details — Trades, Career & Salary', channel: 'Quick Support' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'Apprenticeship / Stipend Jobs', pct: 35 },
@@ -255,8 +251,8 @@ export const COURSE_REALITY = {
       'Expensive at private colleges (₹10–25L total)',
     ],
     videos: [
-      { id: 'V4hx7djMnLo', title: 'Engineering College Reality — Honest', channel: 'Ishan Sharma' },
-      { id: 'gRx0LKRi4pk', title: 'A Day in the Life of an Engineering Student', channel: 'IIT Student Vlogs' },
+      { id: '1w9jrQjHZ_g', title: 'Engineering vs BCA/Other Options', channel: 'Sunil Adhikari' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'Software / IT Jobs', pct: 45 },
@@ -285,8 +281,8 @@ export const COURSE_REALITY = {
       'Mental health challenges are well-documented among MBBS students',
     ],
     videos: [
-      { id: 'qxSX5aN-FP8', title: 'MBBS Reality — What Medical School is Really Like', channel: 'Doctor Vlogs India' },
-      { id: 'rJgpVcuqbTU', title: 'NEET vs Private Medical College — Worth It?', channel: 'Aakash Institute' },
+      { id: '32RMiE9hXY8', title: '10 High Salary PCB Courses Without NEET', channel: 'SciAstra' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'General Practice / GP', pct: 28 },
@@ -315,8 +311,8 @@ export const COURSE_REALITY = {
       'Risk of vague career direction without a clear specialisation',
     ],
     videos: [
-      { id: 'WXg5B5g5jDk', title: 'BBA vs BCom — Which is Better?', channel: 'Commerce Wallah' },
-      { id: 'dPt2w8tsTVo', title: 'Life as a BBA Student', channel: 'Management Students' },
+      { id: 'Un3c8tK0b0E', title: 'Career Options After Class 12: Passion vs Parent expectations', channel: 'Commerce Baba' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'MBA / PGDM (Top B-school)', pct: 35 },
@@ -345,8 +341,8 @@ export const COURSE_REALITY = {
       'Family may not understand or value a design degree initially',
     ],
     videos: [
-      { id: 'P7Fi2bKSolE', title: 'NIFT Life — What it\'s Actually Like', channel: 'NIFT Student' },
-      { id: 'v7iTW3s8B_M', title: 'UX Design Career in India — 2024 Reality', channel: 'Designerrs' },
+      { id: '2QQQtiFwXjU', title: 'Google UX Design Certificate: Introduction to UI/UX', channel: 'Google Career Certificates' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
     ],
     outcomes: [
       { label: 'UI/UX Designer', pct: 30 },
@@ -375,7 +371,7 @@ export const COURSE_REALITY = {
       'Less campus placement ecosystem than engineering colleges',
     ],
     videos: [
-      { id: 'LDqSd_I4c70', title: 'BCA vs B.Tech — Which Should You Choose?', channel: 'Career Points' },
+      { id: '1w9jrQjHZ_g', title: 'BCA Course Details, Syllabus, Jobs & Salary', channel: 'Sunil Adhikari' },
     ],
     outcomes: [
       { label: 'Software Developer / SDE', pct: 40 },
@@ -404,8 +400,8 @@ export const COURSE_REALITY = {
       'Indian legal system is slow — can be frustrating for those seeking quick results',
     ],
     videos: [
-      { id: 'E4gbHEV1lNs', title: 'Life at NLU — Honest Student Review', channel: 'Law School India' },
-      { id: 'kN4nVpuDGMs', title: 'CLAT Preparation — Complete Guide', channel: 'Legal Edge' },
+      { id: 'qynj8GqnY1U', title: 'How to Choose the Right Career Path', channel: 'Sandeep Maheshwari' },
+      { id: 'Un3c8tK0b0E', title: 'Career Options & Personal Passion', channel: 'Commerce Baba' },
     ],
     outcomes: [
       { label: 'Corporate Law / Law Firm', pct: 30 },
@@ -435,7 +431,7 @@ export const COURSE_REALITY = {
       'Family may question "what will you do with this?"',
     ],
     videos: [
-      { id: 'cFP6sYKJpxo', title: 'BSc vs B.Tech — Is Science Honours Worth It?', channel: 'Science India' },
+      { id: '32RMiE9hXY8', title: '10 High Salary PCB Courses Without NEET', channel: 'SciAstra' },
     ],
     outcomes: [
       { label: 'MSc / Higher Study / Research', pct: 45 },
