@@ -543,3 +543,49 @@ export default function Landing() {
     </main>
   )
 }
+
+// ─── Floating chatbot trigger ─────────────────────────────────────────────────
+// Visible to users who haven't completed onboarding yet.
+
+export function ChatFloatingButton() {
+  const [visible, setVisible] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    // Show only if user hasn't done onboarding yet
+    const hasFormData = Boolean(localStorage.getItem('aageKyaFormData'))
+    if (!hasFormData && !dismissed) setVisible(true)
+  }, [dismissed])
+
+  if (!visible || dismissed) return null
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
+      <div className="relative">
+        {/* Dismiss button */}
+        <button
+          onClick={() => setDismissed(true)}
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-navy-800 border border-white/20 text-gray-500 hover:text-white flex items-center justify-center text-xs transition-colors z-10"
+          aria-label="Dismiss"
+        >
+          ✕
+        </button>
+        {/* Main button */}
+        <Link
+          to="/chat"
+          className="flex items-center gap-3 bg-navy-900 border border-indigo-500/30 hover:border-indigo-500/60 rounded-2xl px-4 py-3 shadow-2xl shadow-indigo-500/20 transition-all hover:shadow-indigo-500/30 group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition-transform">
+            🤖
+          </div>
+          <div>
+            <p className="text-white text-xs font-bold leading-tight">Have a quick question?</p>
+            <p className="text-indigo-400 text-[10px] mt-0.5">Ask me anything about courses →</p>
+          </div>
+        </Link>
+        {/* Pulse ring */}
+        <div className="absolute -inset-1 rounded-2xl bg-indigo-500/10 animate-pulse -z-10" />
+      </div>
+    </div>
+  )
+}

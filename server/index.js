@@ -4,7 +4,11 @@ import dotenv from 'dotenv'
 import Groq from 'groq-sdk'
 import { createClient } from '@supabase/supabase-js'
 
-dotenv.config({ override: true })
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.join(__dirname, '.env'), override: true })
 
 const app = express()
 app.set('trust proxy', 1) // Trust first proxy (Railway, Render, Vercel)
@@ -341,21 +345,41 @@ Student Profile (Class 10 Student):
 - Coaching Access Nearby: ${coachingAccessText}
 - Biggest Fear about Stream Selection: ${form.biggestFear || 'Not specified'}
 
-Recommend 3-4 specific high school stream / education tracks (such as Science (PCM), Science (PCB), Commerce, Arts / Humanities, or specific Diploma/Vocational tracks) that fit this student's profile.
+Recommend 3-4 specific high school stream or education tracks that fit this student's profile. Choose from:
+- Science (PCM) — Physics, Chemistry, Maths — leads to JEE/engineering
+- Science (PCB) — Physics, Chemistry, Biology — leads to NEET/medicine
+- Science (PCMB) — all four sciences — maximum flexibility
+- Commerce — Accounts, Business Studies, Economics — leads to BBA/CA/finance
+- Arts / Humanities — History, Political Science, Psychology — leads to BA/law/civil services
+- Diploma / Polytechnic — 3-year technical diploma after 10th, leads to direct technical jobs or lateral entry to B.Tech
+- ITI / Vocational — Government ITI trades (electrician, fitter, COPA, etc.) — leads to skilled trade jobs, apprenticeships
+Only recommend streams that genuinely fit this student's profile.
+
+CRITICAL STREAM ALIGNMENT RULE:
+- Technical 'Diploma / Polytechnic' programs (leading to B.Tech) are engineering/maths-focused. If a student is interested in Biology, Medicine, or Healthcare, do NOT recommend standard engineering diplomas as aligning with their bio interest. 
+- If you recommend a diploma for a biology-interested student, explicitly guide them toward medical/biological vocational diplomas (like DMLT — Diploma in Medical Laboratory Technology, or Diploma in Agriculture/Veterinary) and warn them that a standard polytechnic diploma is an engineering path, not a medical one.
+- Remind them that MBBS/MD or B.Pharm requires Class 12 Science (PCB/PCMB) rather than standard polytechnic diplomas.
+
+CRITICAL for avg_yearly_coaching_cost: This is NOT college tuition. This is the realistic yearly cost for Class 11/12 school fees PLUS any coaching or tuition classes. Typical realistic ranges:
+- Government school + no coaching: ₹5,000–₹20,000/yr
+- Private school + local tuition: ₹40,000–₹1,20,000/yr  
+- Private school + JEE/NEET coaching: ₹80,000–₹2,50,000/yr
+- Diploma/ITI programs: ₹10,000–₹60,000/yr
+Do NOT return college-level fees (₹3L–₹15L) for this field.
 
 Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw JSON):
 {
   "summary": "A warm, honest 2-3 sentence summary of this student's current situation and core choices. Be specific to their marks, interests, and parental expectations.",
   "options": [
     {
-      "path": "Stream option name (e.g. Science (PCM) with Tech Focus)",
+      "path": "Stream option name (e.g. Science (PCM), Diploma / Polytechnic)",
       "honest_take": "2-3 sentences of brutally honest, specific advice for THIS Class 10 student. Explain why this fits their interests/risk/marks, and the difficulty level.",
-      "requires_entrance_exam": "Entrance exams they will face post-12th if they choose this stream (e.g. JEE Main, NEET-UG, CLAT, NATA, or None) — be specific",
-      "realistic_colleges": ["3-4 target high education institutions or specific stream pathways they should aim for in future"],
-      "avg_yearly_cost": "Realistic total yearly cost range for school + coaching/tuition in INR/year",
+      "requires_entrance_exam": "Entrance exams they will face post-12th if they choose this stream (e.g. JEE Main, NEET-UG, CLAT, NATA, Polytechnic CET, or None) — be specific",
+      "realistic_colleges": ["3-4 target institutions or pathways they should aim for in future based on this stream"],
+      "avg_yearly_cost": "Realistic yearly cost for Class 11/12 school + coaching/tuition only (NOT college fees). Format: ₹X–₹Y/yr. Stay within ₹5,000–₹2,50,000 range.",
       "opens_doors_to": ["3-4 specific future degrees or career roles this stream leads to"],
       "watch_out_for": "One specific, honest warning/pitfall about this stream path",
-      "backup_plan": "A practical backup plan if they find the stream too difficult in Class 11/12 or change their mind (e.g. shifting to BCA, switching to Commerce stream, etc.)"
+      "backup_plan": "A practical backup plan if they find the stream too difficult in Class 11/12 or change their mind"
     }
   ],
   "scholarship_to_check": "Name of a relevant scholarship they can check (or search on National Scholarship Portal)",
@@ -1552,6 +1576,137 @@ app.patch('/api/notifications/:id/read', requireAuth(), async (req, res) => {
     if (error) throw error
     res.json({ success: true })
   } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ─── Chatbot Endpoint (lightweight, for new users) ────────────────────────────
+
+const chatLimiter = createRateLimiter(10, 3600000, 'Too many chat messages. Please try again in an hour.')
+
+const CHAT_SYSTEM_PROMPT = `You are a helpful, concise, and honest guide for Indian students asking general questions about education, courses, streams, and careers.
+
+RULES:
+1. Answer factual, general questions directly and clearly (e.g. "What is PCM?", "What is CUET?", "What can I do after Commerce?").
+2. Keep answers short — under 150 words. Use bullet points if listing things.
+3. Be honest and specific to Indian education context.
+4. If the question requires knowing the student's personal situation (marks, income, state, family background, interests, risk comfort), do NOT try to answer it. Instead set handoff=true.
+5. Examples of questions that need handoff: "Which stream is best for me?", "What college should I apply to?", "Will I get into NIT?", "Am I eligible for NEET?", "What should I do after my results?".
+6. Examples that do NOT need handoff (answer directly): "What is JEE?", "What is the difference between NEET and JEE?", "What careers can I get in Commerce?", "What is ITI?", "How long is MBBS?".
+
+RESPONSE FORMAT: Always respond in this exact JSON structure (no markdown, no backticks):
+{
+  "message": "Your answer here",
+  "handoff": false,
+  "handoff_reason": ""
+}
+If handoff is true, message should acknowledge the question and explain why personalised guidance is needed. handoff_reason should be 1 sentence explaining what personal context is missing.`
+
+app.post('/api/chat', chatLimiter, async (req, res) => {
+  const { messages } = req.body
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing messages array' })
+  }
+  // Validate message structure
+  const validMessages = messages
+    .filter(m => m.role && m.content && typeof m.content === 'string')
+    .slice(-6) // max 6 messages context window
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content.slice(0, 1000) }))
+
+  if (validMessages.length === 0) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'No valid messages found' })
+  }
+
+  try {
+    const client = getGroqClient()
+    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: CHAT_SYSTEM_PROMPT },
+        ...validMessages,
+      ],
+      temperature: 0.5,
+      max_tokens: 512,
+      response_format: { type: 'json_object' },
+    })
+    const text = completion.choices[0].message.content
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const result = JSON.parse(cleaned)
+    console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType: 'chat', model, handoff: result.handoff }))
+    res.json({
+      message: result.message || 'Sorry, I couldn\'t generate a response. Please try again.',
+      handoff: result.handoff === true,
+      handoff_reason: result.handoff_reason || '',
+    })
+  } catch (err) {
+    console.error('Chat API Error:', err.message)
+    if (err.message === 'NO_API_KEY') {
+      res.status(401).json({ error: 'NO_API_KEY', message: 'API Key is missing' })
+    } else {
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+    }
+  }
+})
+
+// ─── Course Feedback Endpoints ───────────────────────────────────────────────
+
+// GET /api/course-feedback?stream=Science (PCM)
+// Returns approved public feedback for a given stream/path
+app.get('/api/course-feedback', async (req, res) => {
+  const streamKey = req.query.stream
+  if (!streamKey || streamKey.trim().length < 2) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing stream query param' })
+  }
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.json({ feedback: [] })
+    }
+    const { data, error } = await supabase
+      .from('course_feedback')
+      .select('id, content, created_at')
+      .eq('stream_key', streamKey.trim())
+      .eq('approved', true)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (error) throw error
+    res.json({ feedback: data || [] })
+  } catch (err) {
+    console.error('Course feedback fetch error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// POST /api/course-feedback — authenticated students submit feedback
+const courseFeedbackLimiter = createRateLimiter(3, 3600000, 'You can only submit 3 feedback entries per hour.')
+app.post('/api/course-feedback', requireAuth(), courseFeedbackLimiter, async (req, res) => {
+  const user = req.authUser
+  const { streamKey, content } = req.body
+  if (!streamKey || !content || content.trim().length < 20) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Feedback must be at least 20 characters and include a stream key.' })
+  }
+  if (content.trim().length > 1000) {
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Feedback must be under 1000 characters.' })
+  }
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.json({ success: true, simulated: true })
+    }
+    const client = getSupabaseClient(req.headers.authorization)
+    const { data, error } = await client
+      .from('course_feedback')
+      .insert({
+        stream_key: streamKey.trim(),
+        author_id: user.id,
+        content: content.trim(),
+        approved: false // requires moderation before appearing publicly
+      })
+      .select('id')
+      .single()
+    if (error) throw error
+    res.json({ success: true, id: data.id, message: 'Feedback submitted — it will appear after review.' })
+  } catch (err) {
+    console.error('Course feedback submit error:', err.message)
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
 })

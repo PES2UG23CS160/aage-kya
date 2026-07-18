@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useLocation, Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import AuthModal from '../components/AuthModal'
+import CourseReality from '../components/CourseReality'
+import ExamDetails from '../components/ExamDetails'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -52,7 +54,7 @@ export function Spinner() {
       </div>
       <div className="text-center space-y-1">
         <p className="text-white font-semibold text-lg font-display">Thinking honestly…</p>
-        <p className="text-gray-400 text-sm">Gemini is reading your answers carefully</p>
+        <p className="text-gray-400 text-sm">AI is reading your answers carefully</p>
       </div>
       <div className="flex gap-1.5 mt-2">
         {[0, 1, 2, 3].map((i) => (
@@ -73,18 +75,18 @@ export function NoApiKey() {
       <div className="text-5xl mb-4">🔑</div>
       <h2 className="font-display text-xl font-bold text-white mb-2">API Key Missing</h2>
       <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
-        Add your Gemini API key to the <code className="bg-navy-800 px-2 py-0.5 rounded text-saffron text-xs">.env</code> file to generate personalised guidance.
+        Add your Groq API key to the <code className="bg-navy-800 px-2 py-0.5 rounded text-saffron text-xs">server/.env</code> file to generate personalised guidance.
       </p>
       <div className="bg-navy-800 border border-white/10 rounded-xl p-4 text-left text-sm font-mono text-emerald-400 mb-6">
-        VITE_GEMINI_API_KEY=your_key_here
+        GROQ_API_KEY=your_key_here
       </div>
       <a
-        href="https://aistudio.google.com/app/apikey"
+        href="https://console.groq.com/keys"
         target="_blank"
         rel="noreferrer"
         className="btn-primary text-sm px-6 py-3 inline-block"
       >
-        Get Free API Key →
+        Get Free Groq API Key →
       </a>
       <p className="text-gray-600 text-xs mt-4">Free tier · No credit card needed</p>
     </div>
@@ -247,9 +249,13 @@ function OptionCard({ option, index, formData, collegesData }) {
         </div>
 
         <div>
-          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">💰 Avg Yearly Cost</p>
+          <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">
+            {formData?.classLevel === 'class10' ? '📚 Est. Coaching Cost/yr' : '💰 Avg Yearly Cost'}
+          </p>
           <p className="text-white font-display font-bold text-xl">{option.avg_yearly_cost}</p>
-          <p className="text-gray-500 text-xs mt-1">tuition + hostel + misc</p>
+          <p className="text-gray-500 text-xs mt-1">
+            {formData?.classLevel === 'class10' ? 'school fees + coaching / tuition' : 'tuition + hostel + misc'}
+          </p>
 
           <div className="mt-4">
             <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">🚀 Opens Doors To</p>
@@ -498,8 +504,11 @@ export default function Result() {
           if (formData.classLevel === 'class10') {
             return m.stream_category === 'Class 10 / Stream Selection' && m.available
           }
+          // For Class 12: try exact stream match first, then fall back to any available mentor
           return m.stream_category === formData.stream && m.available
-        })
+        }) || (formData.classLevel === 'class12'
+          ? data.find((m) => m.available) // any available mentor as fallback for Class 12
+          : null)
         if (match) {
           setMatchedMentor(match)
         }
@@ -677,8 +686,10 @@ export default function Result() {
 
             {/* 2 — Options */}
             {(result.options || []).map((opt, i) => (
-              <div key={i} className="space-y-3">
+              <div key={i} className="space-y-2">
                 <OptionCard option={opt} index={i} formData={formData} collegesData={result.colleges_data} />
+                {/* Reality of this course/stream — collapsible insight layer */}
+                <CourseReality streamKey={opt.path} />
                 {parentMode && (
                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5 sm:p-6 animate-slide-up">
                     <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
@@ -712,7 +723,14 @@ export default function Result() {
               )
             )}
 
-            {/* 3.5 — Recommended Mentor Connect */}
+            {/* 3.5 — Entrance Exam Details (Class 12 only) */}
+            {classLevel === 'class12' && (
+              <div className="pt-2">
+                <ExamDetails stream={formData?.stream} />
+              </div>
+            )}
+
+            {/* 3.6 — Recommended Mentor Connect */}
             {matchedMentor && (
               <MentorTeaserBox mentor={matchedMentor} />
             )}
@@ -760,7 +778,7 @@ export default function Result() {
               <p className="text-center text-gray-700 text-xs">
                 {result.grounded
                   ? 'College and scholarship data sourced from our curated database. Costs are estimates — verify directly with each institution before applying.'
-                  : 'Results generated by Gemini AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
+                  : 'Results generated by Groq AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
                 }
               </p>
             </div>

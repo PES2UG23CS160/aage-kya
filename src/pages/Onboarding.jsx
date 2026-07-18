@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import PrivacyConsentModal, { useConsent } from '../components/PrivacyConsentModal'
+import CourseReality from '../components/CourseReality'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -500,15 +501,30 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
     <div className="space-y-7">
 
       {classLevel === 'class10' && (
-        <PillGroup
-          label="Which stream are you leaning towards right now?"
-          required
-          options={['Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities', 'Undecided']}
-          value={form.stream}
-          onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
-          error={errors.stream}
-          hint="It's okay if you're completely undecided — we will help you explore."
-        />
+        <>
+          <PillGroup
+            label="Which stream are you leaning towards right now?"
+            required
+            options={[
+              'Science (PCM)',
+              'Science (PCB)',
+              'Science (PCMB)',
+              'Commerce',
+              'Arts / Humanities',
+              'Diploma / Polytechnic',
+              'ITI / Vocational',
+              'Undecided',
+            ]}
+            value={form.stream}
+            onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
+            error={errors.stream}
+            hint="It's okay if you're completely undecided — we will help you explore all options."
+          />
+          {/* Reality panel — appears below the pill once a stream is selected */}
+          {form.stream && form.stream !== 'Undecided' && (
+            <CourseReality streamKey={form.stream} compact />
+          )}
+        </>
       )}
 
       <div>

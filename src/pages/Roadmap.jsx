@@ -319,7 +319,7 @@ export default function Roadmap() {
         {/* Logged In - Timeline Flow */}
         {!sessionLoading && session && (
           <>
-            {/* Loading Gemini response */}
+            {/* Loading AI response */}
             {status === 'loading' && <Spinner />}
 
             {/* No API key */}

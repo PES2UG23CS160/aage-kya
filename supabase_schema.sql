@@ -475,3 +475,40 @@ CREATE POLICY "notifications_self_rw"
   ON public.notifications FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- ─── Course Feedback Table (Phase 4 — Reality of Courses) ────────────────────
+-- Students submit feedback about a specific stream/path.
+-- Moderated: approved = false by default; only approved entries are publicly visible.
+-- Approval is done via service role key (admin only, not exposed to students).
+
+CREATE TABLE IF NOT EXISTS public.course_feedback (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  stream_key  TEXT        NOT NULL,
+  author_id   UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+  content     TEXT        NOT NULL CHECK (char_length(content) BETWEEN 20 AND 1000),
+  helpful     BOOLEAN,
+  approved    BOOLEAN     NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_feedback_stream ON public.course_feedback (stream_key, approved, created_at DESC);
+ALTER TABLE public.course_feedback ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read approved feedback (public read)
+DROP POLICY IF EXISTS "feedback_public_read" ON public.course_feedback;
+CREATE POLICY "feedback_public_read"
+  ON public.course_feedback FOR SELECT
+  USING (approved = true);
+
+-- Authenticated users can insert their own feedback
+DROP POLICY IF EXISTS "feedback_auth_insert" ON public.course_feedback;
+CREATE POLICY "feedback_auth_insert"
+  ON public.course_feedback FOR INSERT
+  WITH CHECK (auth.uid() = author_id);
+
+-- Authors can view their own pending feedback
+DROP POLICY IF EXISTS "feedback_self_read" ON public.course_feedback;
+CREATE POLICY "feedback_self_read"
+  ON public.course_feedback FOR SELECT
+  USING (auth.uid() = author_id);
+

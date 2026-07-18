@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import Landing from './pages/Landing'
+import { ChatFloatingButton } from './pages/Landing'
 import Onboarding from './pages/Onboarding'
 import Result from './pages/Result'
 import Mentors from './pages/Mentors'
@@ -14,6 +15,7 @@ import MentorDashboard from './pages/MentorDashboard'
 import OfficialReadiness from './pages/OfficialReadiness'
 import Scenarios from './pages/Scenarios'
 import QABoard from './pages/QABoard'
+import Chatbot from './pages/Chatbot'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -44,6 +46,7 @@ function AnimatedRoutes() {
         <Route path="/official-readiness" element={<OfficialReadiness />} />
         <Route path="/scenarios"         element={<Scenarios />} />
         <Route path="/qa"                element={<QABoard />} />
+        <Route path="/chat"              element={<Chatbot />} />
       </Routes>
     </div>
   )
@@ -58,6 +61,7 @@ function App() {
           <Navbar />
           <AnimatedRoutes />
           <Footer />
+          <ChatFloatingButton />
         </div>
       </BrowserRouter>
     </AuthProvider>
