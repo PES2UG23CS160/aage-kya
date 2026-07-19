@@ -3,46 +3,67 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import Groq from 'groq-sdk'
 import { createClient } from '@supabase/supabase-js'
+import { createHash, randomUUID } from 'node:crypto'
 
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { assertValidEnvironment, readEnvironment } from './config/env.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.join(__dirname, '.env'), override: true })
+dotenv.config({ path: path.join(__dirname, '.env'), override: false })
+
+const config = readEnvironment(process.env)
+assertValidEnvironment(config)
+config.warnings.forEach(message => console.warn(`[config] ${message}`))
 
 import { HISTORICAL_CUTOFFS } from './cutoffsData.js'
 
 const app = express()
+app.disable('x-powered-by')
 app.set('trust proxy', 1) // Trust first proxy (Railway, Render, Vercel)
 
-// CORS — allow origins from ALLOWED_ORIGINS env var (comma-separated)
-// Falls back to all origins in development
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : null
-
 app.use(cors({
-  origin: allowedOrigins
+  origin: config.allowedOrigins.length > 0
     ? (origin, cb) => {
         // Allow requests with no origin (mobile apps, curl, Postman)
-        if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
-        cb(new Error(`CORS: origin ${origin} not allowed`))
+        if (!origin || config.allowedOrigins.includes(origin.replace(/\/$/, ''))) return cb(null, true)
+        const error = new Error('Origin is not allowed')
+        error.code = 'CORS_NOT_ALLOWED'
+        cb(error)
       }
-    : true,
+    : !config.isProduction,
   credentials: true,
 }))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
+app.use((req, res, next) => {
+  req.requestId = randomUUID()
+  res.setHeader('x-request-id', req.requestId)
+  res.setHeader('x-content-type-options', 'nosniff')
+  res.setHeader('x-frame-options', 'DENY')
+  res.setHeader('referrer-policy', 'no-referrer')
+  res.setHeader('permissions-policy', 'camera=(), geolocation=(), microphone=()')
+  next()
+})
+
 // Structured Logger Middleware
 app.use((req, res, next) => {
   const start = Date.now()
-  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
   
   res.on('finish', () => {
     const duration = Date.now() - start
-    const authHeader = req.headers.authorization ? 'Yes' : 'No'
-    console.log(`[${new Date().toISOString()}] INFO: ${req.method} ${req.originalUrl} from ${ip} - ${res.statusCode} (Latency: ${duration}ms) [Auth: ${authHeader}]`)
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      level: 'info',
+      event: 'http_request',
+      requestId: req.requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      latencyMs: duration,
+      authenticatedRequest: Boolean(req.headers.authorization),
+    }))
   })
   
   next()
@@ -81,7 +102,7 @@ function createRateLimiter(limit, windowMs, message) {
   }
 }
 
-const isDev = process.env.NODE_ENV !== 'production'
+const isDev = !config.isProduction
 const guidanceLimiter = createRateLimiter(isDev ? 50 : 5, 86400000, "You can only generate 5 career guidance reports per day to prevent system abuse. Please try again tomorrow.")
 const roadmapLimiter  = createRateLimiter(isDev ? 50 : 5, 86400000, "You can only generate 5 career roadmaps per day to prevent system abuse. Please try again tomorrow.")
 const mentorApplyLimiter = createRateLimiter(1, 3600000, "You can only submit one application per hour. Please try again later.")
@@ -89,24 +110,26 @@ const transcribeLimiter  = createRateLimiter(15, 3600000, "You have exceeded the
 
 
 
-const PORT = process.env.PORT || 5000
+const PORT = config.port
 
 // Initialize Supabase Client (anon key — for auth token validation)
-const supabaseUrl = process.env.SUPABASE_URL || 'your-supabase-url'
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'your-supabase-anon-key'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+const supabaseUrl = config.supabaseUrl
+const supabaseAnonKey = config.supabaseAnonKey
+const supabase = config.supabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } })
+  : null
 
 // Admin Supabase client (service role key — bypasses RLS for aggregate queries)
 // SUPABASE_SERVICE_ROLE_KEY is optional; analytics endpoint will be disabled without it.
-const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+const supabaseAdmin = config.supabaseConfigured && config.serviceRoleKey
+  ? createClient(supabaseUrl, config.serviceRoleKey, {
       auth: { persistSession: false },
     })
   : null
 
 // Initialize Groq client
 const getGroqClient = () => {
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = config.groqApiKey
   if (!apiKey) {
     throw new Error('NO_API_KEY')
   }
@@ -115,6 +138,7 @@ const getGroqClient = () => {
 
 // User-scoped Supabase client helper to respect Row Level Security (RLS)
 function getSupabaseClient(authHeader) {
+  if (!config.supabaseConfigured) return null
   if (authHeader) {
     return createClient(supabaseUrl, supabaseAnonKey, {
       global: {
@@ -129,7 +153,7 @@ function getSupabaseClient(authHeader) {
 
 // Retrieve authenticated user from Supabase token; also fetches role from students table
 async function getAuthUser(authHeader) {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!supabase || !authHeader || !authHeader.startsWith('Bearer ')) {
     return null
   }
   const token = authHeader.split(' ')[1]
@@ -156,6 +180,9 @@ async function getAuthUser(authHeader) {
 // Middleware: require a specific role (or any of a list of roles)
 function requireRole(...roles) {
   return async (req, res, next) => {
+    if (!config.supabaseConfigured) {
+      return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authentication is not configured.' })
+    }
     const user = await getAuthUser(req.headers.authorization)
     if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
     if (!roles.includes(user.role)) {
@@ -169,6 +196,9 @@ function requireRole(...roles) {
 // Middleware: require any authenticated user (student, mentor, parent)
 function requireAuth() {
   return async (req, res, next) => {
+    if (!config.supabaseConfigured) {
+      return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authentication is not configured.' })
+    }
     const user = await getAuthUser(req.headers.authorization)
     if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
     req.authUser = user
@@ -199,13 +229,10 @@ const INCOME_TO_LAKH = {
 // ─── RAG Helpers ──────────────────────────────────────────────────────────────
 
 function isSupabaseConfigured() {
-  return supabaseUrl && 
-         !supabaseUrl.includes('your-supabase') && 
-         !supabaseUrl.includes('your-project-ref') && 
-         supabaseUrl !== 'https://your-project-ref.supabase.co'
+  return config.supabaseConfigured
 }
 
-// Fetch real colleges for this student from the DB
+// Fetch prototype college candidates for this student from the DB.
 async function fetchCollegesForStudent(form) {
   if (!isSupabaseConfigured()) return []
   const marks  = Number(form.marks) || 0
@@ -218,6 +245,7 @@ async function fetchCollegesForStudent(form) {
       .from('colleges')
       .select('name, state, city, yearly_cost_min, yearly_cost_max, college_type, national, source_url, min_marks, max_marks')
       .contains('streams', [stream])
+      .not('verified_at', 'is', null)
 
     if (error) { console.warn('College fetch warning:', error.message); return [] }
 
@@ -247,7 +275,8 @@ async function fetchScholarshipsForStudent(form) {
   try {
     const { data, error } = await supabase
       .from('scholarships')
-      .select('name, description, application_url, deadline_pattern, eligibility_income_max_lakh, eligible_streams, eligible_states')
+      .select('name, description, application_url, source_url, deadline_pattern, eligibility_income_max_lakh, eligibility_marks_min, eligible_streams, eligible_states, admission_cycle, verified_at')
+      .not('verified_at', 'is', null)
 
     if (error) { console.warn('Scholarship fetch warning:', error.message); return [] }
 
@@ -301,7 +330,7 @@ function buildCollegesDataMap(colleges) {
   return map
 }
 
-// Find the scholarship object whose name best matches what Gemini chose
+// Find the scholarship object whose name best matches the model output.
 function matchScholarship(scholarships, chosenName) {
   if (!chosenName || !scholarships.length) return null
   const lower = chosenName.toLowerCase()
@@ -316,10 +345,29 @@ function matchScholarship(scholarships, chosenName) {
     const score = words.filter(w => sLower.includes(w)).length
     if (score > bestScore) { bestScore = score; best = s }
   }
-  return bestScore > 0 ? best : scholarships[0] // fallback to first if no match
+  return bestScore > 0 ? best : null
 }
 
-// Onboarding Prompt Builder (now accepts real DB data for RAG grounding)
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = canonicalize(value[key])
+        return result
+      }, {})
+  }
+  return value
+}
+
+function createInputFingerprint(...values) {
+  return createHash('sha256')
+    .update(JSON.stringify(values.map(canonicalize)))
+    .digest('hex')
+}
+
+// Onboarding prompt builder with optional reviewed dataset context.
 function buildPrompt(form, colleges = [], scholarships = []) {
   const income   = INCOME_LABELS[form.incomeRange] || form.incomeRange || 'Not specified'
   const cities   = (form.preferredCities || []).map((c) => CITY_LABELS[c] || c).join(', ') || 'Not specified'
@@ -395,15 +443,15 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
   const grounded = colleges.length > 0 || scholarships.length > 0
 
   const collegesSection = colleges.length > 0
-    ? `\nVERIFIED COLLEGE LIST for this student (stream: ${form.stream}, state: ${form.state}, marks: ${form.marks}%):\n${formatCollegesForPrompt(colleges)}\n`
+    ? `\nPROTOTYPE COLLEGE DATASET (not independently verified for the current admission cycle) for this student (stream: ${form.stream}, state: ${form.state}, marks: ${form.marks}%):\n${formatCollegesForPrompt(colleges)}\n`
     : ''
 
   const scholarshipsSection = scholarships.length > 0
-    ? `\nVERIFIED SCHOLARSHIPS this student qualifies for:\n${formatScholarshipsForPrompt(scholarships)}\n`
+    ? `\nPROTOTYPE SCHOLARSHIP LEADS (eligibility and current status must be verified):\n${formatScholarshipsForPrompt(scholarships)}\n`
     : ''
 
   const groundingInstruction = grounded
-    ? `\nCRITICAL INSTRUCTIONS:\n- For "realistic_colleges": ONLY recommend college names from the VERIFIED COLLEGE LIST above. Do NOT invent college names not in that list. Pick the most relevant ones for each career option.\n- For "scholarship_to_check": use the name of ONE scholarship from the VERIFIED SCHOLARSHIPS list above, the one most relevant to this student.\n- For "avg_yearly_cost": use the cost ranges from the verified college list, don't invent figures.\n`
+    ? `\nCRITICAL INSTRUCTIONS:\n- For "realistic_colleges": ONLY use college names from the PROTOTYPE COLLEGE DATASET above. Do NOT add names.\n- For "scholarship_to_check": use at most one lead from the PROTOTYPE SCHOLARSHIP LEADS above. Never state that the student qualifies.\n- Treat every fee, cutoff, eligibility, and scholarship value as an unverified lead that must be checked against the current official source.\n`
     : ''
 
   return `You are an honest, caring guide for Indian students after 12th grade. Give REAL, specific advice. Not generic. Not motivational fluff.
@@ -428,7 +476,7 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
       "path": "Career / course path name",
       "honest_take": "2-3 sentences of brutally honest, specific advice for THIS student. If this path requires a competitive entrance exam, say exactly which exam, how competitive it is, and what they'd need to do. If it is direct admission, say so clearly.",
       "requires_entrance_exam": "NEET-UG / JEE Main / JEE Advanced / State CET / CLAT / None — be specific",
-      "realistic_colleges": ["3-4 real colleges realistic for this option and the student's marks and state. Use verified list if provided."],
+      "realistic_colleges": ["Up to 3-4 prototype dataset matches. Do not add college names that were not provided."],
       "avg_yearly_cost": "Realistic total yearly cost range in INR/year (tuition + hostel + misc)",
       "opens_doors_to": ["3-4 specific career roles or further study options this path leads to"],
       "watch_out_for": "One specific, honest warning — what most people don't tell you about this path",
@@ -541,9 +589,9 @@ function computeConfidence(form) {
 }
 
 // Helper to call Groq and parse JSON output (with structured latency logging)
-async function callGemini(prompt, { studentId = null, callType = 'guidance' } = {}) {
+async function callStructuredAI(prompt, { studentId = null, callType = 'guidance' } = {}) {
   const client = getGroqClient()
-  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+  const model = config.groqModel
   const promptTokenEstimate = Math.ceil(prompt.length / 4)
   const start = Date.now()
   let parseOk = false
@@ -573,7 +621,26 @@ async function callGemini(prompt, { studentId = null, callType = 'guidance' } = 
 
 // Health Check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' })
+  res.json({
+    status: 'ok',
+    mode: config.supabaseConfigured && config.groqApiKey ? 'ready' : 'degraded',
+    capabilities: {
+      database: config.supabaseConfigured,
+      ai: Boolean(config.groqApiKey),
+      email: Boolean(config.resendApiKey),
+    },
+  })
+})
+
+app.get('/api/health/ready', (req, res) => {
+  const ready = config.supabaseConfigured && Boolean(config.groqApiKey)
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'not_ready',
+    missing: [
+      ...(!config.supabaseConfigured ? ['database'] : []),
+      ...(!config.groqApiKey ? ['ai'] : []),
+    ],
+  })
 })
 
 // 🔮 Rank Predictor API Endpoints
@@ -586,28 +653,39 @@ app.get('/api/predictor/options', async (req, res) => {
   }
 
   let cutoffs = []
-  try {
-    const { data, error } = await supabase
-      .from('college_cutoffs')
-      .select('college_name, course')
-      .eq('exam', exam)
-    if (error) throw error
-    cutoffs = data || []
-  } catch (err) {
-    console.warn('Supabase fetch failed for options, using static fallback:', err.message)
+  if (!supabase && !config.enablePrototypeData) {
+    return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'No reviewed cutoff dataset is configured.' })
+  }
+  if (!supabase) {
     cutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam)
+  } else {
+    try {
+      const { data, error } = await supabase
+        .from('college_cutoffs')
+        .select('college_name, course')
+        .eq('exam', exam)
+        .not('verified_at', 'is', null)
+      if (error) throw error
+      cutoffs = data || []
+    } catch (err) {
+      if (!config.enablePrototypeData) {
+        console.error('Predictor options unavailable:', err.message)
+        return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'Reviewed cutoff data is temporarily unavailable.' })
+      }
+      cutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam)
+    }
   }
 
   // Get unique colleges and courses
   const colleges = [...new Set(cutoffs.map(c => c.college_name))].sort()
   const courses = [...new Set(cutoffs.map(c => c.course))].sort()
 
-  res.json({ colleges, courses })
+  res.json({ colleges, courses, prototype: config.enablePrototypeData && !supabase })
 })
 
 // 2. Predict colleges reachable at a specific rank
 app.get('/api/predictor/predict', async (req, res) => {
-  const { exam, rank: rankStr, category, state } = req.query
+  const { exam, rank: rankStr, category } = req.query
   if (!exam || !rankStr || !category) {
     return res.status(400).json({ error: 'Missing required parameters: exam, rank, category' })
   }
@@ -618,17 +696,28 @@ app.get('/api/predictor/predict', async (req, res) => {
   }
 
   let allCutoffs = []
-  try {
-    const { data, error } = await supabase
-      .from('college_cutoffs')
-      .select('*')
-      .eq('exam', exam)
-      .eq('category', category)
-    if (error) throw error
-    allCutoffs = data || []
-  } catch (err) {
-    console.warn('Supabase fetch failed for predict, using static fallback:', err.message)
+  if (!supabase && !config.enablePrototypeData) {
+    return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'No reviewed cutoff dataset is configured.' })
+  }
+  if (!supabase) {
     allCutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam && c.category === category)
+  } else {
+    try {
+      const { data, error } = await supabase
+        .from('college_cutoffs')
+        .select('*')
+        .eq('exam', exam)
+        .eq('category', category)
+        .not('verified_at', 'is', null)
+      if (error) throw error
+      allCutoffs = data || []
+    } catch (err) {
+      if (!config.enablePrototypeData) {
+        console.error('Predictor data unavailable:', err.message)
+        return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'Reviewed cutoff data is temporarily unavailable.' })
+      }
+      allCutoffs = HISTORICAL_CUTOFFS.filter(c => c.exam === exam && c.category === category)
+    }
   }
 
   // Group by college + course
@@ -651,15 +740,15 @@ app.get('/api/predictor/predict', async (req, res) => {
 
     if (!latestRecord) continue
 
-    const closing2025 = latestRecord.closing_rank
-    let likelihood = 'Unlikely'
+    const latestClosingRank = latestRecord.closing_rank
+    let likelihood = 'Outside latest cutoff'
 
-    if (rank <= closing2025 * 0.8) {
-      likelihood = 'Safe'
-    } else if (rank <= closing2025) {
-      likelihood = 'Likely'
-    } else if (rank <= closing2025 * 1.1) {
-      likelihood = 'Borderline'
+    if (rank <= latestClosingRank * 0.8) {
+      likelihood = 'Well within latest cutoff'
+    } else if (rank <= latestClosingRank) {
+      likelihood = 'Within latest cutoff'
+    } else if (rank <= latestClosingRank * 1.1) {
+      likelihood = 'Near latest cutoff'
     }
 
     // Build trend list sorted by year ascending
@@ -673,13 +762,13 @@ app.get('/api/predictor/predict', async (req, res) => {
       exam,
       category,
       likelihood,
-      closing_2025: closing2025,
+      latest_year: latestRecord.year,
+      latest_closing_rank: latestClosingRank,
       trends
     })
   }
 
-  // Sort: Safe first, then Likely, then Borderline, then Unlikely.
-  const likelihoodOrder = { 'Safe': 1, 'Likely': 2, 'Borderline': 3, 'Unlikely': 4 }
+  const likelihoodOrder = { 'Well within latest cutoff': 1, 'Within latest cutoff': 2, 'Near latest cutoff': 3, 'Outside latest cutoff': 4 }
   results.sort((a, b) => {
     const valA = likelihoodOrder[a.likelihood]
     const valB = likelihoodOrder[b.likelihood]
@@ -687,7 +776,11 @@ app.get('/api/predictor/predict', async (req, res) => {
     return a.college_name.localeCompare(b.college_name)
   })
 
-  res.json({ results })
+  res.json({
+    results,
+    methodology: 'Uncalibrated comparison with the latest available closing rank; not an admission probability or guarantee.',
+    prototype: config.enablePrototypeData && !supabase,
+  })
 })
 
 // 3. Simulate chances for a specific college and course
@@ -703,24 +796,37 @@ app.get('/api/predictor/simulate', async (req, res) => {
   }
 
   let records = []
-  try {
-    const { data, error } = await supabase
-      .from('college_cutoffs')
-      .select('*')
-      .eq('college_name', college)
-      .eq('course', course)
-      .eq('exam', exam)
-      .eq('category', category)
-    if (error) throw error
-    records = data || []
-  } catch (err) {
-    console.warn('Supabase fetch failed for simulate, using static fallback:', err.message)
+  if (!supabase && !config.enablePrototypeData) {
+    return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'No reviewed cutoff dataset is configured.' })
+  }
+  if (!supabase) {
     records = HISTORICAL_CUTOFFS.filter(c => 
       c.college_name === college && 
       c.course === course && 
       c.exam === exam && 
       c.category === category
     )
+  } else {
+    try {
+      const { data, error } = await supabase
+        .from('college_cutoffs')
+        .select('*')
+        .eq('college_name', college)
+        .eq('course', course)
+        .eq('exam', exam)
+        .eq('category', category)
+        .not('verified_at', 'is', null)
+      if (error) throw error
+      records = data || []
+    } catch (err) {
+      if (!config.enablePrototypeData) {
+        console.error('Predictor simulation unavailable:', err.message)
+        return res.status(503).json({ error: 'PREDICTOR_DATA_UNAVAILABLE', message: 'Reviewed cutoff data is temporarily unavailable.' })
+      }
+      records = HISTORICAL_CUTOFFS.filter(c =>
+        c.college_name === college && c.course === course && c.exam === exam && c.category === category
+      )
+    }
   }
 
   if (records.length === 0) {
@@ -733,15 +839,15 @@ app.get('/api/predictor/simulate', async (req, res) => {
   // Sort by year descending
   records.sort((a, b) => b.year - a.year)
   const latestRecord = records[0]
-  const closing2025 = latestRecord.closing_rank
+  const latestClosingRank = latestRecord.closing_rank
 
-  let likelihood = 'Unlikely'
-  if (rank <= closing2025 * 0.8) {
-    likelihood = 'Safe'
-  } else if (rank <= closing2025) {
-    likelihood = 'Likely'
-  } else if (rank <= closing2025 * 1.1) {
-    likelihood = 'Borderline'
+  let likelihood = 'Outside latest cutoff'
+  if (rank <= latestClosingRank * 0.8) {
+    likelihood = 'Well within latest cutoff'
+  } else if (rank <= latestClosingRank) {
+    likelihood = 'Within latest cutoff'
+  } else if (rank <= latestClosingRank * 1.1) {
+    likelihood = 'Near latest cutoff'
   }
 
   const trends = records
@@ -755,8 +861,11 @@ app.get('/api/predictor/simulate', async (req, res) => {
     exam,
     category,
     likelihood,
-    closing_2025: closing2025,
-    trends
+    latest_year: latestRecord.year,
+    latest_closing_rank: latestClosingRank,
+    trends,
+    methodology: 'Uncalibrated comparison with the latest available closing rank; not an admission probability or guarantee.',
+    prototype: config.enablePrototypeData && !supabase,
   })
 })
 
@@ -768,11 +877,11 @@ const validateGuidanceBody = (req, res, next) => {
   next()
 }
 
-// Guidance Results Endpoint (Phase 3: RAG-grounded)
+// Guidance results endpoint (prototype dataset context; not verified RAG)
 app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res) => {
   try {
     const { formData } = req.body
-
+    const inputFingerprint = createInputFingerprint(formData)
 
     const authHeader = req.headers.authorization
     const user = await getAuthUser(authHeader)
@@ -784,6 +893,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         .from('guidance_results')
         .select('*')
         .eq('student_id', user.id)
+        .eq('input_fingerprint', inputFingerprint)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -819,13 +929,14 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
           scholarship_to_check: cached.scholarship_to_check,
           one_thing_to_do_this_week: cached.one_thing_to_do_this_week,
           cached: true,
+          input_fingerprint: inputFingerprint,
           grounded: false, // cached results predate the RAG enrichment
           scholarships_list
         })
       }
     }
 
-    // ── Phase 3: Fetch real data in parallel before calling Gemini ──────────
+    // Fetch reviewed dataset records in parallel before calling the AI provider.
     const [colleges, scholarships] = await Promise.all([
       fetchCollegesForStudent(formData),
       fetchScholarshipsForStudent(formData),
@@ -834,16 +945,16 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
     if (grounded) {
       console.log(`RAG: found ${colleges.length} colleges, ${scholarships.length} scholarships for ${formData.stream}/${formData.state}`)
     } else {
-      console.log('RAG: no DB data found, falling back to Gemini-only prompt')
+      console.log('No reviewed dataset records found; using an evidence-limited AI prompt')
     }
 
-    // Build RAG-grounded prompt and call Gemini
+    // Build a dataset-constrained prompt and call the configured AI provider.
     const prompt = buildPrompt(formData, colleges, scholarships)
     const confidence = computeConfidence(formData)
-    const result = await callGemini(prompt, { studentId: user?.id || null, callType: 'guidance' })
+    const result = await callStructuredAI(prompt, { studentId: user?.id || null, callType: 'guidance' })
 
     // Build helper maps so the frontend can render source links without
-    // relying on Gemini to hallucinate URLs.
+    // relying on the model to generate URLs.
     const colleges_data = buildCollegesDataMap(colleges)
     const matchedScholarship = matchScholarship(scholarships, result.scholarship_to_check)
     const scholarship_data = matchedScholarship
@@ -889,13 +1000,16 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         confidence_score: confidence.confidence_score,
         confidence_label: confidence.confidence_label,
         confidence_reason: confidence.confidence_reason,
-        scholarships_list: (scholarships || []).map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description }))
+        scholarships_list: (scholarships || []).map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description })),
+        input_fingerprint: inputFingerprint,
       })
       // Send guidance-ready email notification (fire-and-forget)
       sendEmail(
         user.email,
         'Your Career Guidance Is Ready — Aage Kya?',
-        `<p>Hi! Your personalised career guidance report has been generated. <a href="https://aagekya.in/result">View it here.</a></p>`
+        config.publicAppUrl
+          ? `<p>Hi! Your personalised career guidance report has been generated. <a href="${config.publicAppUrl}/result">View it here.</a></p>`
+          : '<p>Hi! Your personalised career guidance report has been generated. Sign in to the app to view it.</p>'
       )
     }
 
@@ -913,6 +1027,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       scholarship_data,
       scholarships_list,
       ...confidence,
+      input_fingerprint: inputFingerprint,
     })
   } catch (err) {
     console.error('Guidance API Error:', err.message)
@@ -935,7 +1050,7 @@ const validateRoadmapBody = (req, res, next) => {
 app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) => {
   try {
     const { formData, option } = req.body
-
+    const inputFingerprint = createInputFingerprint(formData, option)
 
     const authHeader = req.headers.authorization
     const user = await getAuthUser(authHeader)
@@ -948,6 +1063,9 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
         .select('*')
         .eq('student_id', user.id)
         .eq('career_path', option.path)
+        .eq('input_fingerprint', inputFingerprint)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       if (cached) {
@@ -955,14 +1073,15 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
           career_path: cached.career_path,
           overview: cached.overview,
           years: cached.years,
-          cached: true
+          cached: true,
+          input_fingerprint: inputFingerprint,
         })
       }
     }
 
-    // Call Gemini if not cached
+    // Call the configured AI provider if not cached.
     const prompt = buildRoadmapPrompt(formData, option)
-    const result = await callGemini(prompt)
+    const result = await callStructuredAI(prompt, { studentId: user?.id || null, callType: 'roadmap' })
 
     // Save to DB if authenticated
     if (user) {
@@ -971,11 +1090,12 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
         student_id: user.id,
         career_path: option.path,
         overview: result.overview,
-        years: result.years
+        years: result.years,
+        input_fingerprint: inputFingerprint,
       })
     }
 
-    res.json(result)
+    res.json({ ...result, input_fingerprint: inputFingerprint })
   } catch (err) {
     console.error('Roadmap API Error:', err.message)
     if (err.message === 'NO_API_KEY') {
@@ -1002,6 +1122,7 @@ app.post('/api/sync', async (req, res) => {
     }
 
     const client = getSupabaseClient(authHeader)
+    const inputFingerprint = createInputFingerprint(formData)
 
     // Upsert Student Profile
     await client.from('students').upsert({
@@ -1029,6 +1150,7 @@ app.post('/api/sync', async (req, res) => {
       .from('guidance_results')
       .select('id')
       .eq('student_id', user.id)
+      .eq('input_fingerprint', inputFingerprint)
       .limit(1)
       .maybeSingle()
 
@@ -1038,7 +1160,8 @@ app.post('/api/sync', async (req, res) => {
         summary: result.summary,
         options: result.options,
         scholarship_to_check: result.scholarship_to_check,
-        one_thing_to_do_this_week: result.one_thing_to_do_this_week
+        one_thing_to_do_this_week: result.one_thing_to_do_this_week,
+        input_fingerprint: inputFingerprint,
       })
     }
 
@@ -1186,7 +1309,7 @@ app.post('/api/re-onboard', async (req, res) => {
 // GET /api/analytics
 // Returns: { by_stream: [{stream, count}], by_state: [{state, count}], total_students: N }
 // Requires SUPABASE_SERVICE_ROLE_KEY in server/.env to bypass Row Level Security.
-app.get('/api/analytics', async (req, res) => {
+app.get('/api/analytics', requireRole('admin'), async (req, res) => {
   if (!supabaseAdmin) {
     return res.status(503).json({
       error: 'ANALYTICS_UNAVAILABLE',
@@ -1232,107 +1355,30 @@ app.get('/api/analytics', async (req, res) => {
   }
 })
 
-// ─── Mentors Endpoints (Phase 4 — Real Mentor Connect) ──────────────────────────
-
-
-const HARDCODED_MENTORS = [
-  {
-    id: 'fallback-1',
-    name: 'Rahul S.',
-    initials: 'RS',
-    college: 'PES University',
-    degree: 'B.E. Electronics & Communication',
-    stream: 'PCB → ECE',
-    stream_category: 'Science (PCB)',
-    city: 'Bengaluru',
-    cal_link: 'https://calendly.com/rahul-s-mentor/20min',
-    story: "I missed NEET by 8 marks. Ended up in ECE. Here's what I wish someone told me.",
-    tags: ['NEET dropout', 'Bio to Engineering', 'Career pivot'],
-    gradient: 'from-blue-500/30 to-blue-600/10',
-    border: 'border-blue-500/25',
-    tag_color: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
-    initials_bg: 'bg-blue-500/20 text-blue-300',
-    available: true,
-  },
-  {
-    id: 'fallback-2',
-    name: 'Priya M.',
-    initials: 'PM',
-    college: 'NIT Surathkal',
-    degree: 'B.Tech Computer Science',
-    stream: 'PCM → CSE',
-    stream_category: 'Science (PCM)',
-    city: 'Mangaluru',
-    cal_link: 'https://calendly.com/priya-m-mentor/20min',
-    story: "First in my family to leave home for college. It was terrifying. I'll tell you exactly what helped.",
-    tags: ['First-gen student', 'Hostel life', 'Scholarships'],
-    gradient: 'from-purple-500/30 to-purple-600/10',
-    border: 'border-purple-500/25',
-    tag_color: 'bg-purple-500/10 text-purple-300 border-purple-500/20',
-    initials_bg: 'bg-purple-500/20 text-purple-300',
-    available: true,
-  },
-  {
-    id: 'fallback-3',
-    name: 'Arjun K.',
-    initials: 'AK',
-    college: 'Manipal University',
-    degree: 'BBA + Certification Finance',
-    stream: 'Commerce',
-    stream_category: 'Commerce',
-    city: 'Pune',
-    cal_link: 'https://calendly.com/arjun-k-mentor/20min',
-    story: "Family wanted CA. I wanted something else. Here's how I navigated that conversation.",
-    tags: ['Family pressure', 'Commerce', 'Non-CA path'],
-    gradient: 'from-emerald-500/30 to-emerald-600/10',
-    border: 'border-emerald-500/25',
-    tag_color: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-    initials_bg: 'bg-emerald-500/20 text-emerald-300',
-    available: true,
-  },
-  {
-    id: 'fallback-4',
-    name: 'Anjali D.',
-    initials: 'AD',
-    college: 'Delhi University',
-    degree: 'B.A. Psychology',
-    stream: 'Class 10 → Humanities',
-    stream_category: 'Class 10 / Stream Selection',
-    city: 'Delhi',
-    cal_link: 'https://calendly.com/anjali-d-mentor/20min',
-    story: "I spent months stressing over whether to take PCM or Arts. I chose Arts and it was the best decision of my life. Let's figure out what fits you.",
-    tags: ['Stream selection', 'Humanities', 'Parent pressure'],
-    gradient: 'from-amber-500/30 to-amber-600/10',
-    border: 'border-amber-500/25',
-    tag_color: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-    initials_bg: 'bg-amber-500/20 text-amber-300',
-    available: true,
-  },
-]
+// ─── Mentor endpoints ────────────────────────────────────────────────────────
+// Never fabricate people or availability. An unavailable datastore returns an
+// explicit empty result so the client can show an honest service state.
 
 // Fetch active mentors list
 app.get('/api/mentors', async (req, res) => {
   try {
     if (!isSupabaseConfigured()) {
-      return res.json(HARDCODED_MENTORS)
+      return res.json([])
     }
 
     const { data, error } = await supabase
       .from('mentors')
       .select('*')
       .eq('available', true)
+      .not('verified_at', 'is', null)
       .order('created_at', { ascending: false })
 
     if (error) throw error
 
-    if (!data || data.length === 0) {
-      return res.json(HARDCODED_MENTORS)
-    }
-
-    res.json(data)
+    res.json(data || [])
   } catch (err) {
-    console.warn('Mentors API error, returning fallback:', err.message)
-    res.json(HARDCODED_MENTORS)
+    console.error('Mentors API error:', err.message)
+    res.status(503).json({ error: 'MENTORS_UNAVAILABLE', message: 'Mentor listings are temporarily unavailable.' })
   }
 })
 
@@ -1347,11 +1393,11 @@ const validateApplyBody = (req, res, next) => {
 app.post('/api/mentors/apply', validateApplyBody, mentorApplyLimiter, async (req, res) => {
   try {
     const { name, email, college, degree, stream, story } = req.body
-
-
     if (!supabaseAdmin || !isSupabaseConfigured()) {
-      console.warn(`Volunteer signup simulated for ${name} (${email}) - Supabase not fully configured`)
-      return res.json({ success: true, simulated: true })
+      return res.status(503).json({
+        error: 'APPLICATIONS_UNAVAILABLE',
+        message: 'Mentor applications cannot be saved because the datastore is not configured.',
+      })
     }
 
     const { error } = await supabaseAdmin
@@ -1423,7 +1469,7 @@ app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
 
 // ── Email helper (Resend) ────────────────────────────────────────────────────
 async function sendEmail(to, subject, html) {
-  const apiKey = process.env.RESEND_API_KEY
+  const apiKey = config.resendApiKey
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY not set — skipping email send')
     return
@@ -1511,7 +1557,7 @@ Write a warm parent briefing. Include: 1. Why this suits your child, 2. Expected
 
     const groqClient = getGroqClient()
     const completion = await groqClient.chat.completions.create({
-      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      model: config.groqModel,
       messages: [{ role: 'user', content: parentPrompt }],
       temperature: 0.6,
       max_tokens: 512,
@@ -1681,6 +1727,7 @@ app.get('/api/qa', async (req, res) => {
   const offset = (page - 1) * limit
   const streamTag = req.query.stream || null
   try {
+    if (!isSupabaseConfigured()) return res.json({ posts: [], page })
     let query = supabase
       .from('qa_posts')
       .select('id, question, answer, answered_at, stream_tag, created_at, mentor_id, mentors(name, initials)')
@@ -1806,7 +1853,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
 
   try {
     const client = getGroqClient()
-    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+    const model = config.groqModel
     const completion = await client.chat.completions.create({
       model,
       messages: [
@@ -1877,7 +1924,10 @@ app.post('/api/course-feedback', requireAuth(), courseFeedbackLimiter, async (re
   }
   try {
     if (!isSupabaseConfigured()) {
-      return res.json({ success: true, simulated: true })
+      return res.status(503).json({
+        error: 'FEEDBACK_UNAVAILABLE',
+        message: 'Feedback cannot be saved because the datastore is not configured.',
+      })
     }
     const client = getSupabaseClient(req.headers.authorization)
     const { data, error } = await client
@@ -1896,6 +1946,26 @@ app.post('/api/course-feedback', requireAuth(), courseFeedbackLimiter, async (re
     console.error('Course feedback submit error:', err.message)
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
+})
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'NOT_FOUND', message: 'API route not found.', requestId: req.requestId })
+})
+
+app.use((err, req, res, _next) => {
+  const isCorsError = err?.code === 'CORS_NOT_ALLOWED'
+  console.error(JSON.stringify({
+    ts: new Date().toISOString(),
+    level: 'error',
+    event: 'unhandled_request_error',
+    requestId: req.requestId,
+    error: err?.message || 'Unknown error',
+  }))
+  res.status(isCorsError ? 403 : 500).json({
+    error: isCorsError ? 'ORIGIN_NOT_ALLOWED' : 'INTERNAL_ERROR',
+    message: isCorsError ? 'Request origin is not allowed.' : 'An unexpected error occurred.',
+    requestId: req.requestId,
+  })
 })
 
 app.listen(PORT, () => {

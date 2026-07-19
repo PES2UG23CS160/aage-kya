@@ -1,17 +1,20 @@
 /**
  * Central API helper.
  * In production  → VITE_API_URL points to your deployed backend (Railway/Render)
- * In development → falls back to localhost:5000 (Vite proxy handles it)
+ * In development → uses same-origin /api calls (Vite proxies them)
  */
-const BASE_URL = import.meta.env.VITE_API_URL || ''
+const BASE_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
 
-async function apiFetch(path, options = {}) {
-  const url = `${BASE_URL}${path}`
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+export function apiUrl(path = '') {
+  const normalizedPath = path && !path.startsWith('/') ? `/${path}` : path
+  return `${BASE_URL}${normalizedPath}`
+}
+
+export async function apiFetch(path, options = {}) {
+  return fetch(apiUrl(path), {
     ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   })
-  return res
 }
 
 export async function getHealth() {

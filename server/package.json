@@ -7,13 +7,12 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "test": "node test.js"
+    "test": "node --test test.js config/env.test.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.11.4",
     "@supabase/supabase-js": "^2.78.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

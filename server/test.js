@@ -29,21 +29,31 @@ before(async () => {
       cwd: __dirname,
       env: {
         ...process.env,
+        NODE_ENV: 'test',
         PORT: TEST_PORT,
-        SUPABASE_SERVICE_ROLE_KEY: ''
+        SUPABASE_URL: '',
+        SUPABASE_ANON_KEY: '',
+        SUPABASE_SERVICE_ROLE_KEY: '',
+        GROQ_API_KEY: '',
+        ALLOWED_ORIGINS: '',
       }
     })
 
     let resolved = false
+    let startupTimer
+
+    const finish = (callback, value) => {
+      if (resolved) return
+      resolved = true
+      clearTimeout(startupTimer)
+      callback(value)
+    }
 
     serverProcess.stdout.on('data', (data) => {
       const output = data.toString()
       console.log(`[Server Stdout]: ${output.trim()}`)
       if (output.includes(`Server listening on port ${TEST_PORT}`)) {
-        if (!resolved) {
-          resolved = true
-          resolve()
-        }
+        finish(resolve)
       }
     })
 
@@ -52,18 +62,12 @@ before(async () => {
     })
 
     serverProcess.on('error', (err) => {
-      if (!resolved) {
-        resolved = true
-        reject(err)
-      }
+      finish(reject, err)
     })
 
     // Timeout safety
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true
-        reject(new Error('Server start timed out after 10 seconds'))
-      }
+    startupTimer = setTimeout(() => {
+      finish(reject, new Error('Server start timed out after 10 seconds'))
     }, 10000)
   })
 })
@@ -86,19 +90,34 @@ describe('Aage Kya? API Integration Tests', () => {
     assert.strictEqual(res.status, 200)
     
     const data = await res.json()
-    assert.deepStrictEqual(data, { status: 'ok' })
+    assert.strictEqual(data.status, 'ok')
+    assert.strictEqual(data.mode, 'degraded')
+    assert.deepStrictEqual(data.capabilities, { database: false, ai: false, email: false })
+  })
+
+  test('GET /api/health/ready should fail closed in degraded mode', async () => {
+    const res = await fetch(`${BASE_URL}/api/health/ready`)
+    assert.strictEqual(res.status, 503)
+    const data = await res.json()
+    assert.strictEqual(data.status, 'not_ready')
+    assert.deepStrictEqual(data.missing, ['database', 'ai'])
+  })
+
+  test('GET /api/predictor/options should not serve prototype data by default', async () => {
+    const res = await fetch(`${BASE_URL}/api/predictor/options?exam=JEE`)
+    assert.strictEqual(res.status, 503)
+    const data = await res.json()
+    assert.strictEqual(data.error, 'PREDICTOR_DATA_UNAVAILABLE')
   })
 
   // 2. Mentors roster
-  test('GET /api/mentors should return list of active mentors', async () => {
+  test('GET /api/mentors should not fabricate mentors when storage is unavailable', async () => {
     const res = await fetch(`${BASE_URL}/api/mentors`)
     assert.strictEqual(res.status, 200)
     
     const data = await res.json()
     assert.ok(Array.isArray(data))
-    assert.ok(data.length > 0)
-    assert.ok(data[0].hasOwnProperty('name'))
-    assert.ok(data[0].hasOwnProperty('cal_link'))
+    assert.deepStrictEqual(data, [])
   })
 
   // 3. Mentors apply endpoint validation
@@ -125,13 +144,15 @@ describe('Aage Kya? API Integration Tests', () => {
       story: 'Test advice.'
     }
 
-    // First request should succeed
+    // First request must report that persistence is unavailable, not fake success.
     const res1 = await fetch(`${BASE_URL}/api/mentors/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(validBody)
     })
-    assert.strictEqual(res1.status, 200)
+    assert.strictEqual(res1.status, 503)
+    const data1 = await res1.json()
+    assert.strictEqual(data1.error, 'APPLICATIONS_UNAVAILABLE')
 
     // Second request immediately after should be rate limited (429)
     const res2 = await fetch(`${BASE_URL}/api/mentors/apply`, {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import PrivacyConsentModal, { useConsent } from '../components/PrivacyConsentModal'
 import CourseReality from '../components/CourseReality'
+import { apiUrl } from '../api'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -467,7 +468,7 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
     else setTranscribingFear(true)
 
     try {
-      const res = await fetch('http://localhost:5000/api/transcribe', {
+      const res = await fetch(apiUrl('/api/transcribe'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio: base64data, mimeType })

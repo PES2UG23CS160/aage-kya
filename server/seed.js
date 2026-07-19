@@ -19,12 +19,18 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.join(__dirname, '.env'), override: true })
+dotenv.config({ path: path.join(__dirname, '.env'), override: false })
 
 import { HISTORICAL_CUTOFFS } from './cutoffsData.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (process.env.NODE_ENV === 'production' || process.env.ENABLE_PROTOTYPE_DATA !== 'true') {
+  console.error('Prototype seeding is disabled.')
+  console.error('Use ENABLE_PROTOTYPE_DATA=true only for a disposable development database.')
+  process.exit(1)
+}
 
 if (!supabaseUrl || supabaseUrl.includes('your-supabase')) {
   console.error('❌ SUPABASE_URL is not configured in server/.env')

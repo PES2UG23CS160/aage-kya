@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { apiUrl } from '../api'
 
 export default function RankPredictor({ formData }) {
   // State for user rank input and config
@@ -46,7 +47,7 @@ export default function RankPredictor({ formData }) {
     let active = true
     const fetchOptions = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/predictor/options?exam=${exam}`)
+        const res = await fetch(apiUrl(`/api/predictor/options?exam=${exam}`))
         if (!res.ok) throw new Error('Failed to fetch simulator options')
         const data = await res.json()
         if (active) {
@@ -78,7 +79,7 @@ export default function RankPredictor({ formData }) {
         if (fallbackOptions) {
           // In a simple system, unique courses can be queried or we fetch from mock local cutoffs
           // Let's call simulate api or a courses subquery. Since we can also just get courses from the server:
-          const res = await fetch(`http://localhost:5000/api/predictor/predict?exam=${exam}&rank=999999&category=${category}`)
+          const res = await fetch(apiUrl(`/api/predictor/predict?exam=${exam}&rank=999999&category=${category}`))
           if (res.ok) {
             const data = await res.json()
             const filtered = data.results
@@ -106,7 +107,7 @@ export default function RankPredictor({ formData }) {
     setPredictedOptions([])
 
     try {
-      const url = `http://localhost:5000/api/predictor/predict?exam=${exam}&rank=${rank}&category=${category}&state=${encodeURIComponent(domicileState)}`
+      const url = apiUrl(`/api/predictor/predict?exam=${exam}&rank=${rank}&category=${category}&state=${encodeURIComponent(domicileState)}`)
       const res = await fetch(url)
       if (!res.ok) throw new Error('Server returned an error')
       const data = await res.json()
@@ -123,7 +124,7 @@ export default function RankPredictor({ formData }) {
   }
 
   // Handle manual simulation
-  const handleSimulate = async () => {
+  const handleSimulate = useCallback(async () => {
     if (!rank || isNaN(parseInt(rank, 10))) {
       alert('Please enter your rank first.')
       return
@@ -134,7 +135,7 @@ export default function RankPredictor({ formData }) {
     setSimulationResult(null)
 
     try {
-      const url = `http://localhost:5000/api/predictor/simulate?college=${encodeURIComponent(simCollege)}&course=${encodeURIComponent(simCourse)}&exam=${exam}&rank=${rank}&category=${category}`
+      const url = apiUrl(`/api/predictor/simulate?college=${encodeURIComponent(simCollege)}&course=${encodeURIComponent(simCourse)}&exam=${exam}&rank=${rank}&category=${category}`)
       const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to run simulation')
       const data = await res.json()
@@ -144,25 +145,25 @@ export default function RankPredictor({ formData }) {
     } finally {
       setSimLoading(false)
     }
-  }
+  }, [rank, simCollege, simCourse, exam, category])
 
   // Auto trigger simulation when college/course selection changes and rank is present
   useEffect(() => {
     if (simCollege && simCourse && rank && !isNaN(parseInt(rank, 10))) {
       handleSimulate()
     }
-  }, [simCollege, simCourse, category])
+  }, [simCollege, simCourse, rank, handleSimulate])
 
-  // Get likelihood badge color
+  // Colour a historical-cutoff position. These labels are not probabilities.
   const getBadgeClass = (status) => {
     switch (status) {
-      case 'Safe':
+      case 'Well within latest cutoff':
         return 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-      case 'Likely':
+      case 'Within latest cutoff':
         return 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
-      case 'Borderline':
+      case 'Near latest cutoff':
         return 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-      case 'Unlikely':
+      case 'Outside latest cutoff':
         return 'bg-rose-500/10 border-rose-500/30 text-rose-400'
       default:
         return 'bg-gray-500/10 border-gray-500/30 text-gray-400'
@@ -176,10 +177,10 @@ export default function RankPredictor({ formData }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/8 pb-4">
         <div>
           <h3 className="font-display font-bold text-lg text-white flex items-center gap-2">
-            <span>🔮</span> Rank-Based College Predictor & Simulator
+            <span>📊</span> Historical Cutoff Comparison
           </h3>
           <p className="text-gray-400 text-xs mt-0.5">
-            Test your admission odds at top central and state colleges based on 3-year cutoff trends.
+            Compare a rank with available historical closing ranks. This is not an admission probability.
           </p>
         </div>
 
@@ -205,7 +206,7 @@ export default function RankPredictor({ formData }) {
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            🎲 Will I Get In?
+            🧪 Compare One Option
           </button>
         </div>
       </div>
@@ -219,7 +220,7 @@ export default function RankPredictor({ formData }) {
             onChange={(e) => setExam(e.target.value)}
             className="w-full bg-indigo-950/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-saffron"
           >
-            <option value="JEE">JEE (IITs / NITs)</option>
+            <option value="JEE">JEE prototype data (Main/Advanced combined)</option>
             <option value="NEET">NEET (AIIMS / Medical)</option>
             <option value="KCET">KCET (Karnataka)</option>
           </select>
@@ -401,8 +402,6 @@ export default function RankPredictor({ formData }) {
                 <div className="grid grid-cols-3 gap-3">
                   {simulationResult.trends.map((t, idx) => {
                     const margin = t.closing_rank - parseInt(rank)
-                    const marginPct = Math.min(100, Math.max(0, (t.closing_rank / (parseInt(rank) || 1)) * 50))
-                    
                     return (
                       <div key={idx} className="bg-indigo-950/40 border border-white/5 rounded-lg p-3 text-center space-y-1.5">
                         <span className="text-[10px] text-gray-400 font-bold block">{t.year} Cutoff</span>
@@ -410,7 +409,7 @@ export default function RankPredictor({ formData }) {
                         
                         {/* Margin indicator */}
                         <span className={`text-[9px] font-semibold ${margin >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {margin >= 0 ? `+${margin.toLocaleString()} ranks safe` : `${Math.abs(margin).toLocaleString()} ranks short`}
+                          {margin >= 0 ? `${margin.toLocaleString()} ranks within` : `${Math.abs(margin).toLocaleString()} ranks outside`}
                         </span>
                       </div>
                     )
@@ -424,7 +423,7 @@ export default function RankPredictor({ formData }) {
 
       {/* Disclaimers & Info */}
       <div className="text-[10px] text-gray-500 bg-white/2 rounded-xl p-3 border border-white/5">
-        <strong className="text-gray-400 font-bold">Trend-Based Estimation:</strong> Predictions are based on historical 2023–2025 cutoff trends. Actual allotments depend on dynamic counselling rounds, seat matrix changes, and current-year competitor performance. This is an estimation tool, not an official seat allotment system.
+        <strong className="text-gray-400 font-bold">Prototype limitation:</strong> The current dataset does not fully separate counselling round, quota, domicile, seat pool, or JEE Main versus Advanced. Labels only compare your rank with the latest stored closing rank; they are not calibrated chances or guarantees. Use the current official counselling authority data before acting.
       </div>
 
     </div>

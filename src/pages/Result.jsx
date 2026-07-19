@@ -5,6 +5,7 @@ import AuthModal from '../components/AuthModal'
 import CourseReality from '../components/CourseReality'
 import ExamDetails from '../components/ExamDetails'
 import RankPredictor from '../components/RankPredictor'
+import { apiUrl } from '../api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,14 +17,14 @@ const INCOME_LABELS = {
 }
 // ─── Backend API call ─────────────────────────────────────────────────────────
 
-async function callGemini(form) {
+async function requestGuidance(form) {
   const { data: { session } } = await supabase.auth.getSession()
   const headers = { 'Content-Type': 'application/json' }
   if (session) {
     headers['Authorization'] = `Bearer ${session.access_token}`
   }
 
-  const res = await fetch('http://localhost:5000/api/guidance', {
+  const res = await fetch(apiUrl('/api/guidance'), {
     method: 'POST',
     headers,
     body: JSON.stringify({ formData: form }),
@@ -73,23 +74,11 @@ export function Spinner() {
 export function NoApiKey() {
   return (
     <div className="glass-card p-8 text-center border-amber-500/30">
-      <div className="text-5xl mb-4">🔑</div>
-      <h2 className="font-display text-xl font-bold text-white mb-2">API Key Missing</h2>
-      <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
-        Add your Groq API key to the <code className="bg-navy-800 px-2 py-0.5 rounded text-saffron text-xs">server/.env</code> file to generate personalised guidance.
+      <div className="text-5xl mb-4">🛠️</div>
+      <h2 className="font-display text-xl font-bold text-white mb-2">Guidance is temporarily unavailable</h2>
+      <p className="text-gray-400 text-sm max-w-sm mx-auto">
+        The guidance service is not configured or is currently offline. Please retry later; no result has been fabricated.
       </p>
-      <div className="bg-navy-800 border border-white/10 rounded-xl p-4 text-left text-sm font-mono text-emerald-400 mb-6">
-        GROQ_API_KEY=your_key_here
-      </div>
-      <a
-        href="https://console.groq.com/keys"
-        target="_blank"
-        rel="noreferrer"
-        className="btn-primary text-sm px-6 py-3 inline-block"
-      >
-        Get Free Groq API Key →
-      </a>
-      <p className="text-gray-600 text-xs mt-4">Free tier · No credit card needed</p>
     </div>
   )
 }
@@ -127,9 +116,9 @@ function NoFormData() {
 function DataGroundingBadge({ grounded }) {
   if (grounded) {
     return (
-      <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        College & scholarship data verified from our database
+      <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1.5">
+        <span className="text-base leading-none">⚠️</span>
+        Prototype dataset — verify all facts on current official sites
       </div>
     )
   }
@@ -310,7 +299,7 @@ function OptionCard({ option, index, formData, collegesData }) {
 }
 
 function ScholarshipBox({ scholarship, scholarshipData }) {
-  // If we have verified DB data, use the real application URL; otherwise fall back to text only
+  // Use a stored application URL when available; the student must still verify it.
   const applyUrl = scholarshipData?.application_url
   const deadline = scholarshipData?.deadline_pattern
 
@@ -426,7 +415,6 @@ function MentorTeaserBox({ mentor }) {
   if (!mentor) return null
 
   // Ensure matching styling tags / colors
-  const gradient = mentor.gradient || 'from-blue-500/30 to-blue-600/10'
   const border = mentor.border || 'border-blue-500/25'
   const initialsBg = mentor.initials_bg || 'bg-blue-500/20 text-blue-300'
 
@@ -451,12 +439,12 @@ function MentorTeaserBox({ mentor }) {
           rel="noreferrer"
           className="btn-primary py-3 px-6 text-sm flex items-center justify-center gap-2 group/btn w-full sm:w-auto text-center"
         >
-          <span>Book Free Call</span>
+          <span>View booking details</span>
           <svg className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </a>
-        <p className="text-center text-gray-600 text-[10px] mt-1.5">20 min · Completely free</p>
+        <p className="text-center text-gray-600 text-[10px] mt-1.5">Format and availability are set by the mentor.</p>
       </div>
     </div>
   )
@@ -471,7 +459,6 @@ export default function Result() {
     const savedRaw = localStorage.getItem('aageKyaFormData')
     const rawForm  = state?.formData ?? (savedRaw ? JSON.parse(savedRaw) : null)
     return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classLevel, state?.formData])
 
 
@@ -495,7 +482,7 @@ export default function Result() {
   // Match a mentor based on student stream or class level
   useEffect(() => {
     if (!formData) return
-    fetch('http://localhost:5000/api/mentors')
+    fetch(apiUrl('/api/mentors'))
       .then((res) => {
         if (!res.ok) throw new Error('API failed')
         return res.json()
@@ -524,7 +511,7 @@ export default function Result() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (event === 'SIGNED_IN' && newSession && formData && result) {
         try {
-          await fetch('http://localhost:5000/api/sync', {
+          await fetch(apiUrl('/api/sync'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -548,7 +535,7 @@ export default function Result() {
     setErrMsg('')
     setScenarioSaved(false)
     try {
-      const data = await callGemini(formData)
+      const data = await requestGuidance(formData)
       setResult(data)
       localStorage.setItem('aageKyaLastResult', JSON.stringify(data))
       localStorage.setItem('aageKyaLastFormData', JSON.stringify(formData))
@@ -568,13 +555,16 @@ export default function Result() {
     setScenarioSaving(true)
     try {
       const label = `${formData.stream || 'My Path'} — ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-      await fetch('http://localhost:5000/api/scenarios', {
+      const response = await fetch(apiUrl('/api/scenarios'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ label, formData, guidanceResult: result }),
       })
+      if (!response.ok) throw new Error('Scenario could not be saved')
       setScenarioSaved(true)
-    } catch { }
+    } catch (err) {
+      console.error('Failed to save scenario:', err)
+    }
     finally { setScenarioSaving(false) }
   }
 
@@ -779,7 +769,7 @@ export default function Result() {
 
               <p className="text-center text-gray-700 text-xs">
                 {result.grounded
-                  ? 'College and scholarship data sourced from our curated database. Costs are estimates — verify directly with each institution before applying.'
+                  ? 'This draft is constrained by the current prototype dataset, which is not yet independently verified for the active admission cycle.'
                   : 'Results generated by Groq AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
                 }
               </p>

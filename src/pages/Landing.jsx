@@ -6,35 +6,35 @@ import { useEffect, useRef, useState } from 'react'
 const features = [
   {
     icon: '💥',
-    title: 'Brutally Honest Options',
-    desc: 'No sugar-coating. We tell you exactly which streams, colleges, and careers actually match your marks, budget, and reality.',
-    tag: 'No fluff',
+    title: 'Explore Possible Paths',
+    desc: 'Use your current profile to explore options, trade-offs, and questions to verify before making a decision.',
+    tag: 'Student-first',
     tagColor: 'text-rose-400 bg-rose-400/10 border-rose-400/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(251,113,133,0.15)]',
   },
   {
     icon: '💰',
-    title: 'Real College Costs',
-    desc: 'Fees, hostel, books, living expenses — the full picture. Know exactly what you\'re signing up for before you sign anything.',
-    tag: 'Transparent',
+    title: 'Make Costs Visible',
+    desc: 'Compare available fee estimates and scholarship leads, then confirm them against the linked current official source.',
+    tag: 'Verify first',
     tagColor: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(52,211,153,0.15)]',
   },
   {
     icon: '🤝',
-    title: 'Talk to a Mentor Free',
-    desc: 'Book a free call with someone who was in your exact shoes — same board results, same confusion. Ask them anything.',
-    tag: 'No cost',
+    title: 'Reviewed Mentor Profiles',
+    desc: 'Connect only when a reviewed mentor is available, with availability and session details shown on their profile.',
+    tag: 'No fake profiles',
     tagColor: 'text-saffron bg-saffron/10 border-saffron/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(255,107,0,0.15)]',
   },
 ]
 
 const stats = [
-  { value: '40K+', label: 'Students Helped', icon: '👥' },
-  { value: '₹0', label: 'Cost to Start', icon: '🎁' },
-  { value: '300+', label: 'Verified Mentors', icon: '🌟' },
-  { value: '12th', label: 'Pass? You Qualify', icon: '✅' },
+  { value: 'India', label: 'Focused guidance', icon: '🇮🇳' },
+  { value: 'Mobile', label: 'Responsive flow', icon: '📱' },
+  { value: 'Clear', label: 'Limits shown', icon: '🔎' },
+  { value: 'Action', label: 'Next-step oriented', icon: '✅' },
 ]
 
 const steps = [
@@ -46,39 +46,15 @@ const steps = [
   },
   {
     step: '02',
-    title: 'Get your honest guide',
-    desc: 'AI reads your real situation and gives 2–3 specific, honest career paths — not generic advice.',
+    title: 'Explore a draft guide',
+    desc: 'The prototype suggests 2–3 paths and trade-offs to investigate, with important facts requiring official verification.',
     icon: '🧭',
   },
   {
     step: '03',
     title: 'Talk to a mentor',
-    desc: 'Book a free call with someone who walked the same path. Real questions, real answers.',
+    desc: 'If a reviewed mentor is available, view their session details and ask questions about their lived experience.',
     icon: '📞',
-  },
-]
-
-const testimonials = [
-  {
-    quote: 'I had 72% in boards and had no idea what to do. Aage Kya showed me options I never knew existed.',
-    name: 'Divya R.',
-    location: 'Nagpur, Maharashtra · Now at VNIT',
-    avatar: '👩‍🎓',
-    color: 'from-purple-500/20 to-purple-600/5 border-purple-500/20',
-  },
-  {
-    quote: 'My parents wanted CA. Aage Kya helped me figure out BBA Finance was actually a better fit for me.',
-    name: 'Karan S.',
-    location: 'Jaipur, Rajasthan · BBA at Christ University',
-    avatar: '👨‍💼',
-    color: 'from-blue-500/20 to-blue-600/5 border-blue-500/20',
-  },
-  {
-    quote: 'First gen college student. Had zero guidance. This tool was like having a elder sibling who\'d been there.',
-    name: 'Preethi M.',
-    location: 'Coimbatore, Tamil Nadu · Now at PSG Tech',
-    avatar: '👩‍💻',
-    color: 'from-saffron/20 to-saffron/5 border-saffron/20',
   },
 ]
 
@@ -197,14 +173,6 @@ function FeatureCard({ feature, index }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function Landing() {
-  const [activeTestimonial, setActiveTestimonial] = useState(0)
-
-  // Auto-rotate testimonials
-  useEffect(() => {
-    const t = setInterval(() => setActiveTestimonial(i => (i + 1) % testimonials.length), 4000)
-    return () => clearInterval(t)
-  }, [])
-
   return (
     <main className="pt-16 overflow-x-hidden">
 
@@ -335,6 +303,11 @@ export default function Landing() {
             <span className="flex items-center gap-1.5">🇮🇳 Built for India</span>
           </div>
 
+          <div className="max-w-3xl mx-auto mb-8 rounded-2xl border border-amber-400/25 bg-amber-400/5 px-5 py-4 text-center">
+            <p className="text-amber-200 text-sm font-semibold">Prototype guidance, not an admission guarantee</p>
+            <p className="text-gray-400 text-xs mt-1">Fees, cutoffs, eligibility, deadlines, and scholarships can change. Confirm every decision on the current official authority or institution website.</p>
+          </div>
+
           {/* Stats grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
             {stats.map((s, i) => (
@@ -353,7 +326,7 @@ export default function Landing() {
           {[
             { icon: '🎓', text: 'PCM / PCB / Commerce / Arts — all streams' },
             { icon: '🏫', text: 'Government & private college options' },
-            { icon: '💸', text: 'Scholarships you actually qualify for' },
+            { icon: '💸', text: 'Scholarship leads to verify' },
             { icon: '🗺️', text: 'Tier 2 & Tier 3 city friendly' },
           ].map((item) => (
             <span key={item.text} className="flex items-center gap-2 font-medium hover:text-white transition-colors duration-200">
@@ -385,7 +358,7 @@ export default function Landing() {
             {/* Connecting line (desktop) */}
             <div className="hidden md:block absolute top-10 left-1/6 right-1/6 h-px bg-gradient-to-r from-saffron/30 via-saffron/60 to-saffron/30 z-0" />
 
-            {steps.map((step, i) => (
+            {steps.map((step) => (
               <div
                 key={step.step}
                 className="relative glass-card p-8 text-center group hover:scale-[1.02] transition-all duration-300 z-10"
@@ -434,69 +407,6 @@ export default function Landing() {
             {features.map((feature, i) => (
               <FeatureCard key={feature.title} feature={feature} index={i} />
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── TESTIMONIALS ── */}
-      <section className="py-20 px-4 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-saffron/[0.03] to-transparent pointer-events-none" />
-
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-3">
-              Real students. Real stories.
-            </h2>
-            <p className="text-gray-400">From confusion to confidence — one student at a time.</p>
-          </div>
-
-          {/* Testimonial carousel */}
-          <div className="relative">
-            <div className="overflow-hidden">
-              <div
-                className="flex transition-transform duration-500 ease-in-out"
-                style={{ transform: `translateX(-${activeTestimonial * 100}%)` }}
-              >
-                {testimonials.map((t, i) => (
-                  <div key={i} className="w-full flex-shrink-0 px-2">
-                    <div className={`glass-card p-10 text-center relative overflow-hidden border bg-gradient-to-br ${t.color}`}>
-                      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-                      <div className="text-5xl font-display text-white/20 mb-4 leading-none">"</div>
-                      <blockquote className="text-gray-200 text-lg md:text-xl leading-relaxed mb-8 font-medium text-balance">
-                        {t.quote}
-                      </blockquote>
-
-                      <div className="flex items-center justify-center gap-3">
-                        <div className="w-11 h-11 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xl">
-                          {t.avatar}
-                        </div>
-                        <div className="text-left">
-                          <div className="text-white font-semibold text-sm">{t.name}</div>
-                          <div className="text-gray-500 text-xs">{t.location}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Dots */}
-            <div className="flex items-center justify-center gap-2 mt-6">
-              {testimonials.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveTestimonial(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    i === activeTestimonial
-                      ? 'bg-saffron w-6'
-                      : 'bg-white/20 w-1.5 hover:bg-white/40'
-                  }`}
-                  aria-label={`View testimonial ${i + 1}`}
-                />
-              ))}
-            </div>
           </div>
         </div>
       </section>

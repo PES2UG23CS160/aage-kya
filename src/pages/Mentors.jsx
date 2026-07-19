@@ -4,65 +4,6 @@ import AuthModal from '../components/AuthModal'
 import { useAuth } from '../context/AuthContext'
 import { getMentors, postMentorApply } from '../api'
 
-// ─── Fallback data ─────────────────────────────────────────────────────────────
-
-const MENTORS = [
-  {
-    id: 'fallback-1',
-    name: 'Rahul S.',
-    initials: 'RS',
-    college: 'PES University',
-    degree: 'B.E. Electronics & Communication',
-    stream: 'PCB → ECE',
-    stream_category: 'Science (PCB)',
-    city: 'Bengaluru',
-    calLink: 'https://calendly.com/rahul-s-mentor/20min',
-    story: "I missed NEET by 8 marks. Ended up in ECE. Here's what I wish someone told me.",
-    tags: ['NEET dropout', 'Bio to Engineering', 'Career pivot'],
-    gradient: 'from-blue-500/30 to-blue-600/10',
-    border: 'border-blue-500/25',
-    tag_color: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
-    initials_bg: 'bg-blue-500/20 text-blue-300',
-    available: true,
-  },
-  {
-    id: 'fallback-2',
-    name: 'Priya M.',
-    initials: 'PM',
-    college: 'NIT Surathkal',
-    degree: 'B.Tech Computer Science',
-    stream: 'PCM → CSE',
-    stream_category: 'Science (PCM)',
-    city: 'Mangaluru',
-    calLink: 'https://calendly.com/priya-m-mentor/20min',
-    story: "First in my family to leave home for college. It was terrifying. I'll tell you exactly what helped.",
-    tags: ['First-gen student', 'Hostel life', 'Scholarships'],
-    gradient: 'from-purple-500/30 to-purple-600/10',
-    border: 'border-purple-500/25',
-    tag_color: 'bg-purple-500/10 text-purple-300 border-purple-500/20',
-    initials_bg: 'bg-purple-500/20 text-purple-300',
-    available: true,
-  },
-  {
-    id: 'fallback-3',
-    name: 'Arjun K.',
-    initials: 'AK',
-    college: 'Manipal University',
-    degree: 'BBA + Certification Finance',
-    stream: 'Commerce',
-    stream_category: 'Commerce',
-    city: 'Pune',
-    calLink: 'https://calendly.com/arjun-k-mentor/20min',
-    story: "Family wanted CA. I wanted something else. Here's how I navigated that conversation.",
-    tags: ['Family pressure', 'Commerce', 'Non-CA path'],
-    gradient: 'from-emerald-500/30 to-emerald-600/10',
-    border: 'border-emerald-500/25',
-    tag_color: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-    initials_bg: 'bg-emerald-500/20 text-emerald-300',
-    available: true,
-  },
-]
-
 const CONCERNS = [
   {
     id: 'neet',
@@ -128,7 +69,7 @@ function MentorCard({ mentor, index, isBestMatch, onChat }) {
               </div>
               <span className="flex-shrink-0 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 text-xs text-emerald-400 font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Free
+                Available
               </span>
             </div>
           </div>
@@ -172,14 +113,16 @@ function MentorCard({ mentor, index, isBestMatch, onChat }) {
 
         {/* CTAs */}
         <div className="grid grid-cols-2 gap-2">
-          <a
-            href={mentor.cal_link || mentor.calLink || '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-outline text-xs py-2.5 text-center flex items-center justify-center gap-1.5"
-          >
-            📅 Book Call
-          </a>
+          {mentor.cal_link ? (
+            <a
+              href={mentor.cal_link}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-outline text-xs py-2.5 text-center flex items-center justify-center gap-1.5"
+            >
+              📅 View booking
+            </a>
+          ) : <span className="btn-outline text-xs py-2.5 text-center text-gray-500">Booking unavailable</span>}
           <button
             onClick={() => onChat(mentor)}
             className="btn-primary text-xs py-2.5 flex items-center justify-center gap-1.5"
@@ -188,7 +131,7 @@ function MentorCard({ mentor, index, isBestMatch, onChat }) {
           </button>
         </div>
 
-        <p className="text-center text-gray-600 text-xs">20 min call · Chat anytime · Free</p>
+        <p className="text-center text-gray-600 text-xs">Availability and session format are set by each mentor.</p>
       </div>
     </div>
   )
@@ -201,6 +144,7 @@ export default function Mentors() {
 
   const [mentorsList, setMentorsList]     = useState([])
   const [loading, setLoading]             = useState(true)
+  const [loadError, setLoadError]         = useState('')
   const [activeFilter, setActiveFilter]   = useState('All')
   const [activeConcern, setActiveConcern] = useState(null)
   const [isModalOpen, setIsModalOpen]     = useState(false)
@@ -218,7 +162,11 @@ export default function Mentors() {
     getMentors()
       .then((res) => { if (!res.ok) throw new Error('API failed'); return res.json() })
       .then((data) => { setMentorsList(data); setLoading(false) })
-      .catch(() => { setMentorsList(MENTORS); setLoading(false) })
+      .catch(() => {
+        setMentorsList([])
+        setLoadError('Verified mentor listings are temporarily unavailable.')
+        setLoading(false)
+      })
   }, [])
 
   const handleChat = (mentor) => {
@@ -296,7 +244,7 @@ export default function Mentors() {
             <span className="gradient-text">actually gets it</span>
           </h1>
           <p className="text-gray-400 text-lg max-w-xl mx-auto">
-            Not a counsellor. Not a coaching centre. Real students who were in your exact shoes — and figured it out.
+            Browse mentor profiles only after they have completed the platform review process.
           </p>
         </div>
 
@@ -304,8 +252,8 @@ export default function Mentors() {
         <div className="flex items-start sm:items-center gap-3 bg-saffron/8 border border-saffron/20 rounded-2xl px-5 py-4 mb-8 max-w-2xl mx-auto animate-fade-in">
           <span className="text-2xl flex-shrink-0">🤝</span>
           <div>
-            <p className="text-saffron font-semibold text-sm">All mentors volunteer their time. No spam, no sales.</p>
-            <p className="text-gray-400 text-xs mt-0.5">Every mentor on this page chose to be here because someone helped them once.</p>
+            <p className="text-saffron font-semibold text-sm">Only reviewed profiles are shown.</p>
+            <p className="text-gray-400 text-xs mt-0.5">Always verify advice against current official admission sources.</p>
           </div>
         </div>
 
@@ -385,8 +333,8 @@ export default function Mentors() {
           </div>
         ) : filteredMentors.length === 0 ? (
           <div className="text-center py-12 glass-card max-w-xl mx-auto mb-16 border-white/10">
-            <p className="text-gray-400 text-base mb-1">No mentors found for this filter.</p>
-            <p className="text-gray-500 text-xs">Try another stream or volunteer to become a mentor!</p>
+            <p className="text-gray-400 text-base mb-1">{loadError || 'No reviewed mentors are available for this filter yet.'}</p>
+            <p className="text-gray-500 text-xs">Try another stream or apply to join the reviewed mentor roster.</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-3 gap-6 mb-16">

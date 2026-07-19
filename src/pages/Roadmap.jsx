@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useLocation, Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { apiUrl } from '../api'
 import {
   Spinner,
   NoApiKey,
@@ -10,14 +11,14 @@ import {
 
 // ─── Backend API call ─────────────────────────────────────────────────────────
 
-async function callGeminiRoadmap(form, option) {
+async function requestRoadmap(form, option) {
   const { data: { session } } = await supabase.auth.getSession()
   const headers = { 'Content-Type': 'application/json' }
   if (session) {
     headers['Authorization'] = `Bearer ${session.access_token}`
   }
 
-  const res = await fetch('http://localhost:5000/api/roadmap', {
+  const res = await fetch(apiUrl('/api/roadmap'), {
     method: 'POST',
     headers,
     body: JSON.stringify({ formData: form, option }),
@@ -42,9 +43,11 @@ export default function Roadmap() {
   const { state } = useLocation()
   
   // Try reading from Router state; fallback to localStorage
-  const savedFormRaw = localStorage.getItem('aageKyaFormData')
-  const rawForm = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
-  const formData = rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
+  const formData = useMemo(() => {
+    const savedFormRaw = localStorage.getItem('aageKyaFormData')
+    const rawForm = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
+    return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
+  }, [classLevel, state?.formData])
   
   const selectedOption = state?.option
 
@@ -143,7 +146,7 @@ export default function Roadmap() {
     setErrMsg('')
     
     try {
-      const data = await callGeminiRoadmap(formData, selectedOption)
+      const data = await requestRoadmap(formData, selectedOption)
       setRoadmap(data)
       setOptionName(selectedOption.path)
       

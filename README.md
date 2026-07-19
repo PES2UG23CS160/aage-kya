@@ -1,90 +1,147 @@
-# Aage Kya? — AI Career Guidance for Indian Students
+# Aage Kya?
 
-A React + Vite + Tailwind app providing honest, AI-powered post-12th career guidance. Built with a Node/Express backend (Gemini proxy) and Supabase for auth + persistence.
+Aage Kya is an India-focused education-guidance prototype for students after class 10 and class 12. The current application includes onboarding, AI-assisted path exploration, roadmaps, a cutoff simulator, saved scenarios, mentor/community surfaces, and a Supabase-backed account flow.
 
----
+It is not yet a production admissions authority. Current seed fees, cutoffs, college matches, exam rules, and scholarships are prototype data and must be verified against the active official notice before a student acts on them. The production rebuild and evidence policy are documented below.
 
-## Quick Start
+## Project status and design documents
 
-### 1. Install dependencies
+- [Current-state audit](docs/CURRENT_STATE_AUDIT.md)
+- [Target architecture, schema, APIs, and algorithms](docs/TARGET_ARCHITECTURE.md)
+- [Official-data and AI research strategy](docs/DATA_AND_AI_RESEARCH.md)
+- [Prioritized implementation roadmap](docs/IMPLEMENTATION_ROADMAP.md)
+
+## Current stack
+
+| Layer | Technology | Location |
+|---|---|---|
+| Web | React 18, React Router, Vite, Tailwind CSS | `src/` |
+| API | Node.js 20+, Express | `server/index.js` |
+| AI | Groq chat and Whisper APIs | Server-side only |
+| Auth/data/realtime | Supabase | `supabase_schema.sql` and `supabase/migrations/` |
+| Deployment stubs | Vercel SPA config and server Procfile | `vercel.json`, `server/Procfile` |
+
+## Local setup
+
+Requirements: Node.js 20 or newer and npm.
 
 ```bash
-# Frontend
-npm install
-
-# Backend
-cd server && npm install && cd ..
+npm ci
+cd server
+npm ci
 ```
 
-### 2. Configure environment variables
+Copy the environment templates without committing the resulting files:
 
-**Frontend** — copy `.env.example` → `.env` and fill in:
+```powershell
+Copy-Item .env.example .env
+Copy-Item server/.env.example server/.env
 ```
+
+Frontend variables:
+
+```dotenv
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Blank locally: Vite proxies same-origin /api requests to port 5000.
+VITE_API_URL=
 ```
 
-**Backend** — copy `server/.env.example` → `server/.env` and fill in:
-```
+Server variables:
+
+```dotenv
 PORT=5000
-GEMINI_API_KEY=your-gemini-api-key
+ALLOWED_ORIGINS=http://localhost:5173
+PUBLIC_APP_URL=http://localhost:5173
+GROQ_API_KEY=your_groq_api_key
 SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_ANON_KEY=your-supabase-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key   # optional, for analytics
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+# Optional: GROQ_MODEL and RESEND_API_KEY
+# Development fixtures only: ENABLE_PROTOTYPE_DATA=true
 ```
 
-### 3. Set up Supabase
+Outside production, the API can start in explicit degraded mode without Supabase or Groq so health, validation, and honest empty states can be tested. Auth/persistence or AI endpoints remain unavailable; they are not simulated. Production startup fails if Supabase, Groq, or `ALLOWED_ORIGINS` is missing.
 
-1. Create a free project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the entire contents of [`supabase_schema.sql`](./supabase_schema.sql)
-3. Go to **Authentication → Providers** and enable **Email (magic link)**
-4. Copy your project URL and anon key from **Project Settings → API** into both `.env` files above
-
-### 4. Run
+Run the services in separate terminals:
 
 ```bash
-# Terminal 1 — Express backend (port 5000)
-cd server && node index.js
+cd server
+npm start
+```
 
-# Terminal 2 — Vite frontend (port 5173)
+```bash
 npm run dev
 ```
 
----
+The web app is normally at `http://localhost:5173` and the API at `http://localhost:5000`.
 
-## Architecture
+## Database setup
 
-| Layer | Tech | Notes |
-|-------|------|-------|
-| Frontend | React 18, Vite, Tailwind CSS | `src/` |
-| Backend | Node.js, Express | `server/index.js` |
-| AI | Gemini 2.0 Flash | Server-side only — API key never reaches the browser |
-| Auth | Supabase Magic Link (OTP email) | `src/components/AuthModal.jsx` |
-| Database | Supabase (Postgres) | `supabase_schema.sql` |
+The repository is transitioning from a legacy bootstrap SQL file to ordered migrations.
 
-## API Endpoints
+For a new development database:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| POST | `/api/guidance` | Generate AI career guidance |
-| POST | `/api/roadmap` | Generate 4-year learning roadmap |
-| POST | `/api/sync` | Sync localStorage data to DB after sign-in |
-| GET | `/api/analytics` | Stream/state counts (requires service role key) |
+1. Create a Supabase project or local Supabase instance.
+2. Apply `supabase_schema.sql` once.
+3. Apply files in `supabase/migrations/` in filename order.
+4. Enable the intended Supabase email authentication providers and configure redirect URLs.
+5. Test RLS using anonymous, student, mentor, and service-role clients.
 
-## Analytics (Pitch Deck Data)
+For an existing database, apply only unapplied migrations after backup and staging verification. See [migration instructions](supabase/migrations/README.md).
 
-With `SUPABASE_SERVICE_ROLE_KEY` set in `server/.env`:
+Do not run `server/seed.js` in production. It contains prototype fixtures without field-level provenance, current-cycle validation, or human verification. In particular, migrated mentor rows are hidden until an authorized reviewer sets `verified_at`.
+
+## Verification
 
 ```bash
-curl http://localhost:5000/api/analytics
-# → { total_students, by_stream: [...], by_state: [...] }
+# Frontend production build
+npm run build
+
+# Existing lint baseline (currently has known failures recorded in the audit)
+npm run lint
+
+# Environment unit tests and degraded-mode API integration tests
+cd server
+npm test
 ```
 
-Or run the cross-tab query directly in Supabase SQL Editor:
-```sql
-SELECT stream, state, COUNT(*) AS n
-FROM public.students
-GROUP BY stream, state
-ORDER BY n DESC LIMIT 30;
-```
+Health endpoints:
+
+- `GET /api/health` reports process status and configured capabilities.
+- `GET /api/health/ready` returns `503` until database and AI dependencies are configured.
+
+## API surface
+
+The current unversioned prototype exposes:
+
+- Guidance and plans: `/api/guidance`, `/api/roadmap`, `/api/parent-summary`, `/api/clarify`.
+- Prediction: `/api/predictor/options`, `/api/predictor/predict`, `/api/predictor/simulate`.
+- Account data: `/api/sync`, `/api/re-onboard`, `/api/wallet`, `/api/scenarios`.
+- Mentor/community: `/api/mentors`, `/api/mentors/apply`, `/api/mentor-sessions`, `/api/qa`, `/api/chat`, `/api/course-feedback`.
+- Support: `/api/transcribe`, `/api/notifications`, `/api/health`.
+- Staff-only: `/api/analytics` requires an authenticated `admin` role and a service-role client on the server.
+
+The target API is `/api/v1` with generated OpenAPI and typed schemas; see the [target architecture](docs/TARGET_ARCHITECTURE.md#api-design).
+
+## Security notice
+
+A previous tracked version of `server/.env.example` contained real-looking Supabase credentials, including a service-role token. Removing it from the current file does not revoke it or remove it from Git history. The project owner must:
+
+1. Rotate/revoke the exposed service-role and anon/JWT credentials in Supabase.
+2. Review database/auth/provider logs for unexpected use.
+3. Update deployment secrets and clients.
+4. Run a repository-history secret scan and coordinate any history rewrite with all collaborators.
+
+Never expose a service-role key to the browser. It bypasses RLS.
+
+## Known limitations
+
+- Recommendation and cutoff methods are prototype heuristics, not calibrated admission probabilities.
+- The data model cannot yet provide complete active-cycle, field-level provenance.
+- Exam details and seed data require current official-source re-ingestion.
+- AI output is JSON-parsed but not yet fully schema-bound or claim-validated.
+- The current server remains a monolith; TypeScript modules, OpenAPI, distributed rate limits, jobs, telemetry, and CI/CD are roadmap work.
+- Frontend lint debt, accessibility/E2E coverage, multilingual completion, and offline/PWA behavior remain open.
+
+Please report incorrect educational information instead of silently propagating it. A source URL, document date, admission cycle, and exact disputed value make corrections actionable.

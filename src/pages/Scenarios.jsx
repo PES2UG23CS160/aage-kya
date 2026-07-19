@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { apiUrl } from '../api'
 
-const API = 'http://localhost:5000'
+const API = apiUrl()
 
 function ScenarioCard({ scenario, selected, onSelect, onDelete }) {
   const form = scenario.form_data || {}
