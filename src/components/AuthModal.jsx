@@ -8,7 +8,7 @@ const TABS = [
 
 export default function AuthModal({ isOpen, onClose }) {
   const [tab, setTab]           = useState('password')   // 'password' | 'magic'
-  const [mode, setMode]         = useState('signin')     // 'signin' | 'signup'
+  const [mode, setMode]         = useState('signin')     // 'signin' | 'signup' | 'forgot'
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
@@ -25,8 +25,23 @@ export default function AuthModal({ isOpen, onClose }) {
     setLoading(false)
   }
 
-  const switchTab = (t) => { reset(); setTab(t) }
+  const closeModal = () => {
+    reset()
+    setTab('password')
+    setMode('signin')
+    onClose()
+  }
+
+  const switchTab = (t) => {
+    reset()
+    setMode('signin')
+    setTab(t)
+  }
   const switchMode = (m) => { reset(); setMode(m) }
+
+  const passwordResetRedirectUrl = () => (
+    new URL('/auth/reset-password', window.location.origin).toString()
+  )
 
   // ── Handlers ──────────────────────────────────────────────
   const handleMagicLink = async (e) => {
@@ -34,13 +49,33 @@ export default function AuthModal({ isOpen, onClose }) {
     if (!email.trim()) return setErrorMsg('Please enter your email.')
     setLoading(true); setErrorMsg('')
     const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
+      email: email.trim(),
+      options: {
+        emailRedirectTo: window.location.origin,
+        shouldCreateUser: false,
+      },
     })
     setLoading(false)
     if (error) return setErrorMsg(error.message)
     setSuccess(true)
     setSuccessMsg(`Magic link sent to ${email}. Click it to log in!`)
+  }
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault()
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail) return setErrorMsg('Please enter your email.')
+
+    setLoading(true)
+    setErrorMsg('')
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: passwordResetRedirectUrl(),
+    })
+    setLoading(false)
+
+    if (error) return setErrorMsg(error.message)
+    setSuccess(true)
+    setSuccessMsg(`If an account exists for ${normalizedEmail}, a password reset link is on its way.`)
   }
 
   const handleEmailPassword = async (e) => {
@@ -60,7 +95,7 @@ export default function AuthModal({ isOpen, onClose }) {
     let error
     if (mode === 'signup') {
       const { error: e } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: { emailRedirectTo: window.location.origin },
       })
@@ -70,10 +105,10 @@ export default function AuthModal({ isOpen, onClose }) {
         setSuccessMsg(`Account created! Check ${email} for a confirmation link.`)
       }
     } else {
-      const { error: e } = await supabase.auth.signInWithPassword({ email, password })
+      const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
       error = e
       if (!error) {
-        onClose()
+        closeModal()
         return
       }
     }
@@ -101,7 +136,7 @@ export default function AuthModal({ isOpen, onClose }) {
 
           {/* Close */}
           <button
-            onClick={() => { reset(); onClose() }}
+            onClick={closeModal}
             className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all"
             aria-label="Close"
           >
@@ -118,7 +153,7 @@ export default function AuthModal({ isOpen, onClose }) {
               </div>
               <h2 className="font-display text-2xl font-bold text-white mb-2">Check your email!</h2>
               <p className="text-gray-300 text-sm leading-relaxed max-w-xs mx-auto mb-6">{successMsg}</p>
-              <button onClick={() => { reset(); onClose() }} className="btn-primary px-8 py-3 text-sm">
+              <button onClick={closeModal} className="btn-primary px-8 py-3 text-sm">
                 Done
               </button>
             </div>
@@ -127,30 +162,35 @@ export default function AuthModal({ isOpen, onClose }) {
               {/* Header */}
               <div className="text-center mb-6">
                 <div className="w-12 h-12 rounded-2xl bg-saffron/10 border border-saffron/30 flex items-center justify-center text-2xl mx-auto mb-3">
-                  {mode === 'signup' ? '🚀' : '✨'}
+                  {mode === 'signup' ? '🚀' : mode === 'forgot' ? '🔑' : '✨'}
                 </div>
                 <h2 className="font-display text-2xl font-bold text-white">
-                  {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+                  {mode === 'signup' ? 'Create your account' : mode === 'forgot' ? 'Reset your password' : 'Welcome back'}
                 </h2>
-                <p className="text-gray-400 text-sm mt-1">Save your results &amp; chat with mentors</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {mode === 'forgot' ? 'We will email you a secure reset link' : 'Save your results & chat with mentors'}
+                </p>
               </div>
 
               {/* Tab switcher */}
-              <div className="flex bg-white/5 rounded-xl p-1 mb-5">
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => switchTab(t.id)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                      tab === t.id
-                        ? 'bg-saffron text-white shadow-md'
-                        : 'text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              {mode !== 'forgot' && (
+                <div className="flex bg-white/5 rounded-xl p-1 mb-5">
+                  {TABS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => switchTab(t.id)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                        tab === t.id
+                          ? 'bg-saffron text-white shadow-md'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Error */}
               {errorMsg && (
@@ -182,7 +222,32 @@ export default function AuthModal({ isOpen, onClose }) {
               )}
 
               {/* ── Email + Password Form ── */}
-              {tab === 'password' && (
+              {tab === 'password' && mode === 'forgot' && (
+                <form onSubmit={handlePasswordReset} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email Address</label>
+                    <input
+                      type="email" required value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. aditya@gmail.com"
+                      autoComplete="email"
+                      className={inputClass}
+                    />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-sm gap-2 disabled:opacity-60">
+                    {loading ? <Spinner /> : null}
+                    {loading ? 'Sending reset link...' : 'Email Reset Link →'}
+                  </button>
+                  <p className="text-center text-gray-500 text-xs">
+                    Remembered your password?{' '}
+                    <button type="button" onClick={() => switchMode('signin')} className="text-saffron hover:underline font-semibold">
+                      Back to sign in
+                    </button>
+                  </p>
+                </form>
+              )}
+
+              {tab === 'password' && mode !== 'forgot' && (
                 <form onSubmit={handleEmailPassword} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-gray-300 mb-1.5">Email Address</label>
@@ -194,7 +259,14 @@ export default function AuthModal({ isOpen, onClose }) {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">Password</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-gray-300">Password</label>
+                      {mode === 'signin' && (
+                        <button type="button" onClick={() => switchMode('forgot')} className="text-[11px] text-saffron hover:underline font-semibold">
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="password" required value={password}
                       onChange={(e) => setPassword(e.target.value)}

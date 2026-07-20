@@ -151,6 +151,126 @@ function ConfidenceBadge({ label, reason }) {
   )
 }
 
+const AGENT_LABELS = {
+  student_profile_agent: 'Student profile',
+  competitive_examination_agent: 'Exam routes',
+  college_recommendation_agent: 'College ranking',
+  fee_analysis_agent: 'Fee analysis',
+  scholarship_agent: 'Scholarship matching',
+  career_guidance_agent: 'Career pathways',
+  verification_agent: 'Evidence verification',
+  recommendation_explanation_agent: 'Explanation',
+  orchestrator_agent: 'Final orchestration',
+}
+
+function AgentTracePanel({ trace, decisionContext }) {
+  if (!trace) return null
+  const completed = trace.steps.filter(step => step.status === 'completed').length
+  const totalDuration = Math.max(0, new Date(trace.completedAt).getTime() - new Date(trace.startedAt).getTime())
+  const missing = decisionContext?.profileCompleteness?.missing || []
+
+  return (
+    <details className="glass-card overflow-hidden group">
+      <summary className="cursor-pointer list-none p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-saffron">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-saffron text-xs font-bold uppercase tracking-widest">Agent decision trace</p>
+            <p className="text-white font-semibold mt-1">{completed}/{trace.steps.length} agents completed · {totalDuration} ms</p>
+          </div>
+          <span className="text-xs text-gray-400 border border-white/10 rounded-full px-3 py-1.5 group-open:text-saffron">
+            Inspect workflow
+          </span>
+        </div>
+      </summary>
+      <div className="border-t border-white/8 px-5 pb-5">
+        <div className="grid sm:grid-cols-2 gap-3 py-5">
+          {trace.steps.map((step, index) => (
+            <div key={`${step.agent}-${index}`} className="rounded-xl border border-white/8 bg-navy-900/60 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${step.status === 'completed' ? 'bg-emerald-400' : step.status === 'failed' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                  <p className="text-gray-200 text-sm font-semibold">{AGENT_LABELS[step.agent] || step.agent}</p>
+                </div>
+                <span className="text-gray-600 text-[11px] whitespace-nowrap">{step.durationMs} ms</span>
+              </div>
+              <p className="text-gray-500 text-xs mt-2">
+                {step.evidenceCount} evidence record{step.evidenceCount === 1 ? '' : 's'} · {step.status}
+              </p>
+              {step.message && <p className="text-gray-500 text-xs mt-1">{step.message}</p>}
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-white/8 bg-navy-900/60 p-4 text-xs text-gray-400">
+          <p>
+            Evidence coverage: {trace.evidenceCoverage.colleges} colleges, {trace.evidenceCoverage.scholarships} scholarships,
+            {' '}{trace.evidenceCoverage.feeSchedules} component fee schedules, {trace.evidenceCoverage.officialSources} official sources.
+          </p>
+          {missing.length > 0 && (
+            <p className="mt-2 text-amber-300">
+              Missing profile inputs were not guessed: {missing.join(', ')}.
+            </p>
+          )}
+          <p className="mt-2 text-gray-600">Workflow version {trace.orchestrationVersion} · run {trace.runId.slice(0, 8)}</p>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function ScholarshipDecisionPanel({ analysis }) {
+  const candidates = analysis?.candidates || []
+  if (candidates.length === 0) return null
+  const statusStyle = {
+    eligible: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/20',
+    needs_information: 'text-amber-300 bg-amber-400/10 border-amber-400/20',
+    not_eligible: 'text-gray-400 bg-white/5 border-white/10',
+  }
+  const statusText = {
+    eligible: 'Eligible on recorded facts',
+    needs_information: 'Needs information',
+    not_eligible: 'Not eligible on recorded facts',
+  }
+
+  return (
+    <details className="glass-card overflow-hidden group">
+      <summary className="cursor-pointer list-none p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-saffron">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-emerald-300 text-xs font-bold uppercase tracking-widest">Scholarship rule checks</p>
+            <p className="text-white font-semibold mt-1">See eligibility, failures, and missing inputs</p>
+          </div>
+          <span className="text-xs text-gray-400 border border-white/10 rounded-full px-3 py-1.5 group-open:text-saffron">Inspect checks</span>
+        </div>
+      </summary>
+      <div className="border-t border-white/8 p-5 space-y-3">
+        {candidates.map(candidate => (
+          <div key={candidate.name} className="rounded-xl border border-white/8 bg-navy-900/60 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-gray-200 text-sm font-semibold">{candidate.name}</p>
+                {candidate.admissionCycle && <p className="text-gray-600 text-xs mt-1">Cycle: {candidate.admissionCycle}</p>}
+              </div>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusStyle[candidate.status] || statusStyle.needs_information}`}>
+                {statusText[candidate.status] || candidate.status}
+              </span>
+            </div>
+            {candidate.reasons?.length > 0 && <p className="text-emerald-200/70 text-xs mt-3">{candidate.reasons.join(' ')}</p>}
+            {candidate.failures?.length > 0 && <p className="text-rose-300/80 text-xs mt-3">{candidate.failures.join(' ')}</p>}
+            {candidate.missingFields?.length > 0 && (
+              <p className="text-amber-300/80 text-xs mt-3">Needed: {candidate.missingFields.join(', ')}. No value was guessed.</p>
+            )}
+            {candidate.sourceUrl && (
+              <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="inline-block text-saffron text-xs font-semibold mt-3 hover:text-saffron-light">
+                Check official source ↗
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 // ─── Result display components ────────────────────────────────────────────────
 
 function SummaryCard({ summary, name }) {
@@ -675,6 +795,10 @@ export default function Result() {
               name={formData?.fullName}
             />
 
+            <AgentTracePanel trace={result.agent_trace} decisionContext={result.decision_context} />
+
+            <ScholarshipDecisionPanel analysis={result.decision_context?.scholarshipAnalysis} />
+
             {/* 2 — Options */}
             {(result.options || []).map((opt, i) => (
               <div key={i} className="space-y-2">
@@ -732,6 +856,14 @@ export default function Result() {
               <OneActionBox action={result.one_thing_to_do_this_week} />
             )}
 
+            <div className="glass-card p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-saffron/20">
+              <div>
+                <p className="text-white font-bold">Check the real fee breakdown</p>
+                <p className="text-gray-400 text-sm mt-1">See reviewed official circulars, category remissions, deposits, hostel and mess components.</p>
+              </div>
+              <Link to="/fees" className="btn-primary px-6 py-3 text-sm whitespace-nowrap">Explore verified fees →</Link>
+            </div>
+
             {/* ── Bottom CTA ── */}
             <div className="pt-4 space-y-4">
               <div className="glass-card p-7 text-center border-white/10">
@@ -769,8 +901,8 @@ export default function Result() {
 
               <p className="text-center text-gray-700 text-xs">
                 {result.grounded
-                  ? 'This draft is constrained by the current prototype dataset, which is not yet independently verified for the active admission cycle.'
-                  : 'Results generated by Groq AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
+                  ? 'The recommendation uses reviewed records available to the service; re-open every linked authority source before applying.'
+                  : 'The result is evidence-limited. Unsupported college, scholarship and fee claims are removed, but you must verify every decision on current official sites.'
                 }
               </p>
             </div>

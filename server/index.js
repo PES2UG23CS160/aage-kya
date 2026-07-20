@@ -8,6 +8,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { assertValidEnvironment, readEnvironment } from './config/env.js'
+import { GuidanceResponseSchema, RoadmapResponseSchema } from './ai/contracts.js'
+import { createGuidanceOrchestrator, GUIDANCE_ORCHESTRATION_VERSION } from './ai/guidanceOrchestrator.js'
+import { AIProviderGateway } from './ai/providerGateway.js'
+import { createGroqProvider } from './ai/providers/groqProvider.js'
+import { calculateFeePlan } from './domain/fees/feeEngine.js'
+import { VERIFIED_FEE_PILOT, VERIFIED_FEE_SOURCES } from './data/verifiedFeePilot.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '.env'), override: false })
@@ -107,6 +113,7 @@ const guidanceLimiter = createRateLimiter(isDev ? 50 : 5, 86400000, "You can onl
 const roadmapLimiter  = createRateLimiter(isDev ? 50 : 5, 86400000, "You can only generate 5 career roadmaps per day to prevent system abuse. Please try again tomorrow.")
 const mentorApplyLimiter = createRateLimiter(1, 3600000, "You can only submit one application per hour. Please try again later.")
 const transcribeLimiter  = createRateLimiter(15, 3600000, "You have exceeded the transcription rate limit. Please try again in an hour.")
+const feeCalculationLimiter = createRateLimiter(isDev ? 200 : 60, 3600000, 'Too many fee calculations. Please try again later.')
 
 
 
@@ -127,6 +134,63 @@ const supabaseAdmin = config.supabaseConfigured && config.serviceRoleKey
     })
   : null
 
+function datastoreError(operation, error) {
+  const wrapped = new Error(`${operation} failed: ${error?.message || 'unknown datastore error'}`)
+  wrapped.code = 'DATA_STORE_UNAVAILABLE'
+  wrapped.cause = error
+  return wrapped
+}
+
+function requireSupabaseAdmin(operation) {
+  if (!supabaseAdmin) {
+    throw datastoreError(operation, new Error('The server-managed Supabase client is not configured.'))
+  }
+  return supabaseAdmin
+}
+
+async function persistRecommendationAudit({ orchestration, inputFingerprint, studentId, result }) {
+  if (!supabaseAdmin) {
+    if (config.isProduction) throw datastoreError('Recommendation audit write', new Error('Service-role client is unavailable.'))
+    return false
+  }
+
+  const recommendationRow = {
+    id: orchestration.trace.runId,
+    student_id: studentId,
+    input_fingerprint: inputFingerprint,
+    profile_version: GUIDANCE_ORCHESTRATION_VERSION,
+    catalogue_version: null,
+    rules_version: GUIDANCE_ORCHESTRATION_VERSION,
+    model_version: config.groqModel || null,
+    orchestration_version: orchestration.trace.orchestrationVersion,
+    status: orchestration.trace.steps.some(step => step.status === 'failed') ? 'degraded' : 'completed',
+    evidence_coverage: orchestration.trace.evidenceCoverage,
+    result,
+    completed_at: orchestration.trace.completedAt,
+  }
+
+  const { error: runError } = await supabaseAdmin.from('recommendation_runs').insert(recommendationRow)
+  if (runError) {
+    throw datastoreError('Recommendation audit write', runError)
+  }
+
+  const agentRows = orchestration.trace.steps.map(step => ({
+    recommendation_run_id: orchestration.trace.runId,
+    agent_name: step.agent,
+    provider: step.agent === 'recommendation_explanation_agent' ? 'configured_text_gateway' : 'deterministic',
+    model: step.agent === 'recommendation_explanation_agent' ? (config.groqModel || null) : null,
+    status: step.status,
+    evidence_count: step.evidenceCount,
+    latency_ms: step.durationMs,
+    error_code: step.status === 'failed' ? 'AGENT_FAILED' : null,
+  }))
+  const { error: agentError } = await supabaseAdmin.from('agent_runs').insert(agentRows)
+  if (agentError) {
+    throw datastoreError('Agent audit write', agentError)
+  }
+  return true
+}
+
 // Initialize Groq client
 const getGroqClient = () => {
   const apiKey = config.groqApiKey
@@ -135,6 +199,23 @@ const getGroqClient = () => {
   }
   return new Groq({ apiKey })
 }
+
+const aiGateway = new AIProviderGateway({
+  providers: [createGroqProvider({ apiKey: config.groqApiKey, model: config.groqModel })],
+  timeoutMs: config.aiTimeoutMs,
+  maxRetries: config.aiMaxRetries,
+})
+
+const guidanceOrchestrator = createGuidanceOrchestrator({
+  generateRecommendation: (context) => callStructuredAI(
+    buildPrompt(context.profile, context.colleges, context.scholarshipMatches.eligibleRecords),
+    {
+      studentId: context.studentId,
+      callType: 'guidance_explanation',
+      schema: GuidanceResponseSchema,
+    },
+  ),
+})
 
 // User-scoped Supabase client helper to respect Row Level Security (RLS)
 function getSupabaseClient(authHeader) {
@@ -160,19 +241,22 @@ async function getAuthUser(authHeader) {
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     if (error || !user) return null
-    // Attach role from students profile (defaults 'student' if row doesn't exist yet)
-    try {
-      const { data: profile } = await supabase
-        .from('students')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
-      user.role = profile?.role || 'student'
-    } catch (_) {
-      user.role = 'student'
-    }
+    // Role lookup must either use the caller's bearer token (so students_self_rw
+    // applies) or the trusted server client. A bare anon client cannot read the
+    // authenticated user's row and previously downgraded every mentor/admin.
+    const roleClient = supabaseAdmin || getSupabaseClient(authHeader)
+    const { data: profile, error: profileError } = await roleClient
+      .from('students')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (profileError) throw datastoreError('User role lookup', profileError)
+    user.role = ['student', 'mentor', 'admin'].includes(profile?.role)
+      ? profile.role
+      : 'student'
     return user
   } catch (err) {
+    if (err?.code === 'DATA_STORE_UNAVAILABLE') throw err
     return null
   }
 }
@@ -183,26 +267,36 @@ function requireRole(...roles) {
     if (!config.supabaseConfigured) {
       return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authentication is not configured.' })
     }
-    const user = await getAuthUser(req.headers.authorization)
-    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
-    if (!roles.includes(user.role)) {
-      return res.status(403).json({ error: 'FORBIDDEN', message: `Requires role: ${roles.join(' or ')}` })
+    try {
+      const user = await getAuthUser(req.headers.authorization)
+      if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
+      if (!roles.includes(user.role)) {
+        return res.status(403).json({ error: 'FORBIDDEN', message: `Requires role: ${roles.join(' or ')}` })
+      }
+      req.authUser = user
+      next()
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'authorization_lookup_failed', requestId: req.requestId, error: error.message }))
+      return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authorization could not be verified.' })
     }
-    req.authUser = user
-    next()
   }
 }
 
-// Middleware: require any authenticated user (student, mentor, parent)
+// Middleware: require any authenticated user.
 function requireAuth() {
   return async (req, res, next) => {
     if (!config.supabaseConfigured) {
       return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authentication is not configured.' })
     }
-    const user = await getAuthUser(req.headers.authorization)
-    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
-    req.authUser = user
-    next()
+    try {
+      const user = await getAuthUser(req.headers.authorization)
+      if (!user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' })
+      req.authUser = user
+      next()
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'authorization_lookup_failed', requestId: req.requestId, error: error.message }))
+      return res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Authorization could not be verified.' })
+    }
   }
 }
 
@@ -267,10 +361,6 @@ async function fetchCollegesForStudent(form) {
 // Fetch relevant scholarships for this student from the DB
 async function fetchScholarshipsForStudent(form) {
   if (!isSupabaseConfigured()) return []
-  const marks       = Number(form.marks) || 0
-  const incomeLakh  = INCOME_TO_LAKH[form.incomeRange] || 99
-  const stream      = form.stream || ''
-  const state       = form.state  || ''
 
   try {
     const { data, error } = await supabase
@@ -280,15 +370,10 @@ async function fetchScholarshipsForStudent(form) {
 
     if (error) { console.warn('Scholarship fetch warning:', error.message); return [] }
 
-    return (data || []).filter(s => {
-      const streams = s.eligible_streams || []
-      const states  = s.eligible_states  || []
-      const streamOk = streams.includes('All') || streams.length === 0 || streams.includes(stream)
-      const stateOk  = states.includes('All')  || states.length === 0  || states.includes(state)
-      const marksOk  = (s.eligibility_marks_min || 0) <= marks
-      const incomeOk = (s.eligibility_income_max_lakh || 99) >= incomeLakh
-      return streamOk && stateOk && marksOk && incomeOk
-    }).slice(0, 8)
+    // Do not pre-filter missing values into silent rejections. The deterministic
+    // rule engine classifies each reviewed record as eligible, not eligible, or
+    // needs information and records the reason.
+    return (data || []).slice(0, 50)
   } catch (err) {
     console.warn('Scholarship fetch failed:', err.message)
     return []
@@ -589,57 +674,187 @@ function computeConfidence(form) {
 }
 
 // Helper to call Groq and parse JSON output (with structured latency logging)
-async function callStructuredAI(prompt, { studentId = null, callType = 'guidance' } = {}) {
-  const client = getGroqClient()
-  const model = config.groqModel
+async function callStructuredAI(prompt, { studentId = null, callType = 'guidance', schema = GuidanceResponseSchema } = {}) {
   const promptTokenEstimate = Math.ceil(prompt.length / 4)
   const start = Date.now()
-  let parseOk = false
   try {
-    const completion = await client.chat.completions.create({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 2048,
-      response_format: { type: 'json_object' },
+    const response = await aiGateway.generateStructured({
+      prompt,
+      schema,
+      callType,
+      metadata: { studentId },
     })
-    const text = completion.choices[0].message.content
-    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-    const result = JSON.parse(cleaned)
-    parseOk = true
-    const latencyMs = Date.now() - start
-    console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType, model, promptTokens: promptTokenEstimate, latencyMs, parseOk, studentId }))
-    return result
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'ai_call',
+      callType,
+      provider: response.provider,
+      model: response.model,
+      promptTokens: promptTokenEstimate,
+      latencyMs: response.latencyMs,
+      attempts: response.attempts,
+      parseOk: true,
+      studentId,
+    }))
+    return response.data
   } catch (err) {
     const latencyMs = Date.now() - start
-    console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call_error', callType, model, promptTokens: promptTokenEstimate, latencyMs, parseOk, studentId, error: err.message }))
+    console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call_error', callType, promptTokens: promptTokenEstimate, latencyMs, parseOk: false, studentId, code: err.code, error: err.message }))
     throw err
   }
 }
 
 // --- Endpoints ---
 
+const DATABASE_READINESS_CHECKS = [
+  ['students', 'id,role'],
+  ['mentor_applications', 'id,status,reviewed_at,reviewed_by'],
+  ['guidance_results', 'id,input_fingerprint,pipeline_version,grounded,colleges_data,scholarship_data,agent_trace,decision_context'],
+  ['source_registry', 'id'],
+  ['source_snapshots', 'id'],
+  ['institutions', 'id'],
+  ['campuses', 'id'],
+  ['courses', 'id'],
+  ['admission_cycles', 'id'],
+  ['program_offerings', 'id'],
+  ['exams', 'id'],
+  ['exam_cycles', 'id'],
+  ['program_exam_requirements', 'program_offering_id'],
+  ['fee_schedules', 'id'],
+  ['fee_components', 'id'],
+  ['location_cost_profiles', 'id'],
+  ['scholarship_schemes', 'id'],
+  ['scholarship_rules', 'id'],
+  ['recommendation_runs', 'id'],
+  ['agent_runs', 'id'],
+]
+
+let databaseReadinessCache = { expiresAt: 0, result: null }
+
+async function checkDatabaseReadiness() {
+  if (!supabaseAdmin) return { ready: false, failed: ['service_role'] }
+  if (databaseReadinessCache.result && databaseReadinessCache.expiresAt > Date.now()) {
+    return databaseReadinessCache.result
+  }
+
+  const checks = await Promise.all(DATABASE_READINESS_CHECKS.map(async ([table, columns]) => {
+    const { error } = await supabaseAdmin.from(table).select(columns, { head: true }).limit(1)
+    if (error) {
+      console.error(JSON.stringify({ event: 'readiness_database_check_failed', table, error: error.message }))
+    }
+    return { table, ready: !error }
+  }))
+  const result = {
+    ready: checks.every(check => check.ready),
+    failed: checks.filter(check => !check.ready).map(check => check.table),
+  }
+  databaseReadinessCache = { expiresAt: Date.now() + 30000, result }
+  return result
+}
+
 // Health Check
 app.get('/api/health', (req, res) => {
+  const configured = config.supabaseConfigured && Boolean(supabaseAdmin) && aiGateway.available && Boolean(config.resendApiKey) && Boolean(config.publicAppUrl)
   res.json({
     status: 'ok',
-    mode: config.supabaseConfigured && config.groqApiKey ? 'ready' : 'degraded',
+    mode: configured ? 'configured' : 'degraded',
     capabilities: {
       database: config.supabaseConfigured,
-      ai: Boolean(config.groqApiKey),
+      serverManagedDatabase: Boolean(supabaseAdmin),
+      ai: aiGateway.available,
+      agenticGuidance: aiGateway.available,
       email: Boolean(config.resendApiKey),
+      publicAppUrl: Boolean(config.publicAppUrl),
     },
   })
 })
 
-app.get('/api/health/ready', (req, res) => {
-  const ready = config.supabaseConfigured && Boolean(config.groqApiKey)
+app.get('/api/health/ready', async (req, res) => {
+  const database = config.supabaseConfigured && supabaseAdmin
+    ? await checkDatabaseReadiness()
+    : { ready: false, failed: [] }
+  const ready = database.ready && aiGateway.available && Boolean(config.resendApiKey) && Boolean(config.publicAppUrl)
   res.status(ready ? 200 : 503).json({
     status: ready ? 'ready' : 'not_ready',
     missing: [
       ...(!config.supabaseConfigured ? ['database'] : []),
-      ...(!config.groqApiKey ? ['ai'] : []),
+      ...(!supabaseAdmin ? ['server_managed_database'] : []),
+      ...(supabaseAdmin && !database.ready ? ['database_migrations'] : []),
+      ...(!aiGateway.available ? ['ai'] : []),
+      ...(!config.resendApiKey ? ['email'] : []),
+      ...(!config.publicAppUrl ? ['public_app_url'] : []),
     ],
+    failedDatabaseChecks: database.failed,
+  })
+})
+
+// Deterministic affordability calculation. This endpoint never asks an LLM to
+// perform arithmetic and never upgrades an estimate to an official fee.
+app.post('/api/fees/calculate', feeCalculationLimiter, (req, res) => {
+  try {
+    const calculation = calculateFeePlan(req.body)
+    res.json({
+      calculation,
+      methodology: 'Component-level deterministic calculation with explicit recurrence, escalation, conditions, and confirmed-versus-expected aid.',
+      disclaimer: calculation.evidence.complete
+        ? 'All submitted components include source metadata; confirm that each source is still current before payment.'
+        : calculation.evidence.warning,
+    })
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'INVALID_FEE_PLAN',
+        message: 'The fee plan is incomplete or contains invalid values.',
+        issues: error.issues?.map(issue => ({ path: issue.path.join('.'), message: issue.message })) || [],
+      })
+    }
+    throw error
+  }
+})
+
+// Reviewed pilot records. Each amount comes from an official 2026-27 fee
+// circular and carries its source, document date, checksum and limitations.
+app.get('/api/fees/pilot', (req, res) => {
+  const plans = VERIFIED_FEE_PILOT.map(plan => {
+    const calculation = calculateFeePlan(plan)
+    return {
+      id: calculation.id,
+      institutionId: calculation.institutionId,
+      institutionName: calculation.institutionName,
+      courseName: calculation.courseName,
+      academicYear: calculation.academicYear,
+      studentCategory: plan.studentContext.category,
+      coverage: calculation.coverage,
+      currency: calculation.currency,
+      gross: calculation.totals.gross,
+      confirmedAid: calculation.totals.confirmedAid,
+      netConfirmed: calculation.totals.netConfirmed,
+      limitations: calculation.limitations,
+      evidenceComplete: calculation.evidence.complete,
+    }
+  })
+
+  res.json({
+    plans,
+    sources: VERIFIED_FEE_SOURCES,
+    methodology: 'Reviewed official-source pilot; all arithmetic is deterministic and performed component by component.',
+    disclaimer: 'Coverage differs by record. Read the coverage and limitations before comparing totals or making a payment decision.',
+  })
+})
+
+app.get('/api/fees/pilot/:id', (req, res) => {
+  const plan = VERIFIED_FEE_PILOT.find(candidate => candidate.id === req.params.id)
+  if (!plan) {
+    return res.status(404).json({
+      error: 'FEE_PLAN_NOT_FOUND',
+      message: 'No reviewed pilot fee plan exists for that identifier.',
+    })
+  }
+
+  res.json({
+    calculation: calculateFeePlan(plan),
+    studentContext: plan.studentContext,
+    disclaimer: 'Official circulars can be revised. Re-open the linked source and confirm the current amount before payment.',
   })
 })
 
@@ -881,7 +1096,7 @@ const validateGuidanceBody = (req, res, next) => {
 app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res) => {
   try {
     const { formData } = req.body
-    const inputFingerprint = createInputFingerprint(formData)
+    const inputFingerprint = createInputFingerprint(GUIDANCE_ORCHESTRATION_VERSION, formData)
 
     const authHeader = req.headers.authorization
     const user = await getAuthUser(authHeader)
@@ -889,14 +1104,16 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
     if (user) {
       const client = getSupabaseClient(authHeader)
       // Check if guidance results are already cached in DB
-      const { data: cached } = await client
+      const { data: cached, error: cacheError } = await client
         .from('guidance_results')
         .select('*')
         .eq('student_id', user.id)
         .eq('input_fingerprint', inputFingerprint)
+        .eq('pipeline_version', GUIDANCE_ORCHESTRATION_VERSION)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
+      if (cacheError) throw datastoreError('Guidance cache lookup', cacheError)
 
       if (cached) {
         // Fetch matching scholarships for the student dynamically to show the list
@@ -930,8 +1147,12 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
           one_thing_to_do_this_week: cached.one_thing_to_do_this_week,
           cached: true,
           input_fingerprint: inputFingerprint,
-          grounded: false, // cached results predate the RAG enrichment
-          scholarships_list
+          grounded: cached.grounded,
+          colleges_data: cached.colleges_data || {},
+          scholarship_data: cached.scholarship_data || null,
+          scholarships_list: cached.scholarships_list?.length ? cached.scholarships_list : scholarships_list,
+          agent_trace: cached.agent_trace,
+          decision_context: cached.decision_context,
         })
       }
     }
@@ -948,15 +1169,27 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       console.log('No reviewed dataset records found; using an evidence-limited AI prompt')
     }
 
-    // Build a dataset-constrained prompt and call the configured AI provider.
-    const prompt = buildPrompt(formData, colleges, scholarships)
+    // Coordinate deterministic profile/exam/college/fee/scholarship/verification
+    // agents before asking the explanation agent to produce student-facing copy.
     const confidence = computeConfidence(formData)
-    const result = await callStructuredAI(prompt, { studentId: user?.id || null, callType: 'guidance' })
+    const orchestration = await guidanceOrchestrator.run({
+      formData,
+      colleges,
+      scholarships,
+      studentId: user?.id || null,
+    })
+    const result = orchestration.result
 
     // Build helper maps so the frontend can render source links without
     // relying on the model to generate URLs.
     const colleges_data = buildCollegesDataMap(colleges)
-    const matchedScholarship = matchScholarship(scholarships, result.scholarship_to_check)
+    const eligibleScholarshipNames = new Set(
+      orchestration.context.scholarshipAnalysis.candidates
+        .filter(candidate => candidate.status === 'eligible')
+        .map(candidate => candidate.name),
+    )
+    const eligibleScholarships = scholarships.filter(scholarship => eligibleScholarshipNames.has(scholarship.name))
+    const matchedScholarship = matchScholarship(eligibleScholarships, result.scholarship_to_check)
     const scholarship_data = matchedScholarship
       ? {
           name:             matchedScholarship.name,
@@ -970,7 +1203,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
     if (user) {
       const client = getSupabaseClient(authHeader)
       // Save student profile
-      await client.from('students').upsert({
+      const { error: profileError } = await client.from('students').upsert({
         id: user.id,
         full_name: formData.fullName || '',
         state: formData.state || '',
@@ -989,9 +1222,21 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         coaching_access: formData.coachingAccess === true,
         updated_at: new Date().toISOString()
       })
+      if (profileError) throw datastoreError('Student profile write', profileError)
+    }
 
-      // Save results
-      await client.from('guidance_results').insert({
+    await persistRecommendationAudit({
+      orchestration,
+      inputFingerprint,
+      studentId: user?.id || null,
+      result,
+    })
+
+    if (user) {
+      // Evidence and trace columns are server-managed. The corresponding RLS
+      // policy intentionally gives students read access only.
+      const admin = requireSupabaseAdmin('Guidance result write')
+      const { error: guidanceWriteError } = await admin.from('guidance_results').insert({
         student_id: user.id,
         summary: result.summary,
         options: result.options,
@@ -1000,20 +1245,26 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         confidence_score: confidence.confidence_score,
         confidence_label: confidence.confidence_label,
         confidence_reason: confidence.confidence_reason,
-        scholarships_list: (scholarships || []).map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description })),
+        scholarships_list: eligibleScholarships.map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description })),
         input_fingerprint: inputFingerprint,
+        pipeline_version: GUIDANCE_ORCHESTRATION_VERSION,
+        grounded,
+        colleges_data,
+        scholarship_data,
+        agent_trace: orchestration.trace,
+        decision_context: orchestration.context,
       })
-      // Send guidance-ready email notification (fire-and-forget)
-      sendEmail(
+      if (guidanceWriteError) throw datastoreError('Guidance result write', guidanceWriteError)
+
+      // Notify only after every required persistence write succeeds.
+      await sendEmail(
         user.email,
         'Your Career Guidance Is Ready — Aage Kya?',
-        config.publicAppUrl
-          ? `<p>Hi! Your personalised career guidance report has been generated. <a href="${config.publicAppUrl}/result">View it here.</a></p>`
-          : '<p>Hi! Your personalised career guidance report has been generated. Sign in to the app to view it.</p>'
+        `<p>Hi! Your personalised career guidance report has been generated. <a href="${config.publicAppUrl}/result">View it here.</a></p>`,
       )
     }
 
-    const scholarships_list = (scholarships || []).map(s => ({
+    const scholarships_list = eligibleScholarships.map(s => ({
       name: s.name,
       application_url: s.application_url,
       deadline_pattern: s.deadline_pattern,
@@ -1028,11 +1279,17 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       scholarships_list,
       ...confidence,
       input_fingerprint: inputFingerprint,
+      agent_trace: orchestration.trace,
+      decision_context: orchestration.context,
     })
   } catch (err) {
     console.error('Guidance API Error:', err.message)
-    if (err.message === 'NO_API_KEY') {
-      res.status(401).json({ error: 'NO_API_KEY', message: 'API Key is missing' })
+    if (err.message === 'NO_API_KEY' || err.code === 'NO_AI_PROVIDER') {
+      res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'No AI provider is configured.' })
+    } else if (err.code === 'AI_PROVIDERS_FAILED') {
+      res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'All configured AI providers are temporarily unavailable.' })
+    } else if (err.code === 'DATA_STORE_UNAVAILABLE') {
+      res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Guidance was generated but could not be safely persisted. Please try again.' })
     } else {
       res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
     }
@@ -1058,7 +1315,7 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
     if (user) {
       const client = getSupabaseClient(authHeader)
       // Check cache in DB
-      const { data: cached } = await client
+      const { data: cached, error: cacheError } = await client
         .from('roadmaps')
         .select('*')
         .eq('student_id', user.id)
@@ -1067,6 +1324,7 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
+      if (cacheError) throw datastoreError('Roadmap cache lookup', cacheError)
 
       if (cached) {
         return res.json({
@@ -1081,18 +1339,19 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
 
     // Call the configured AI provider if not cached.
     const prompt = buildRoadmapPrompt(formData, option)
-    const result = await callStructuredAI(prompt, { studentId: user?.id || null, callType: 'roadmap' })
+    const result = await callStructuredAI(prompt, { studentId: user?.id || null, callType: 'roadmap', schema: RoadmapResponseSchema })
 
     // Save to DB if authenticated
     if (user) {
       const client = getSupabaseClient(authHeader)
-      await client.from('roadmaps').insert({
+      const { error: roadmapWriteError } = await client.from('roadmaps').insert({
         student_id: user.id,
         career_path: option.path,
         overview: result.overview,
         years: result.years,
         input_fingerprint: inputFingerprint,
       })
+      if (roadmapWriteError) throw datastoreError('Roadmap write', roadmapWriteError)
     }
 
     res.json({ ...result, input_fingerprint: inputFingerprint })
@@ -1100,6 +1359,8 @@ app.post('/api/roadmap', validateRoadmapBody, roadmapLimiter, async (req, res) =
     console.error('Roadmap API Error:', err.message)
     if (err.message === 'NO_API_KEY') {
       res.status(401).json({ error: 'NO_API_KEY', message: 'API Key is missing' })
+    } else if (err.code === 'DATA_STORE_UNAVAILABLE') {
+      res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'The roadmap could not be safely loaded or saved. Please try again.' })
     } else {
       res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
     }
@@ -1122,10 +1383,10 @@ app.post('/api/sync', async (req, res) => {
     }
 
     const client = getSupabaseClient(authHeader)
-    const inputFingerprint = createInputFingerprint(formData)
+    const inputFingerprint = createInputFingerprint('legacy-client-sync-v1', formData)
 
     // Upsert Student Profile
-    await client.from('students').upsert({
+    const { error: profileError } = await client.from('students').upsert({
       id: user.id,
       full_name: formData.fullName || '',
       state: formData.state || '',
@@ -1144,31 +1405,42 @@ app.post('/api/sync', async (req, res) => {
       coaching_access: formData.coachingAccess === true,
       updated_at: new Date().toISOString()
     })
+    if (profileError) throw datastoreError('Student profile sync', profileError)
 
-    // Upsert Guidance Results
-    const { data: existing } = await client
+    // Students can read guidance rows, but writes are server-managed so audit
+    // fields cannot be forged through the public Supabase client.
+    const { data: existing, error: existingError } = await client
       .from('guidance_results')
       .select('id')
       .eq('student_id', user.id)
       .eq('input_fingerprint', inputFingerprint)
       .limit(1)
       .maybeSingle()
+    if (existingError) throw datastoreError('Guidance sync lookup', existingError)
 
     if (!existing) {
-      await client.from('guidance_results').insert({
+      const admin = requireSupabaseAdmin('Guidance sync write')
+      const { error: guidanceSyncError } = await admin.from('guidance_results').insert({
         student_id: user.id,
         summary: result.summary,
         options: result.options,
         scholarship_to_check: result.scholarship_to_check,
         one_thing_to_do_this_week: result.one_thing_to_do_this_week,
         input_fingerprint: inputFingerprint,
+        pipeline_version: 'legacy-client-sync-v1',
+        grounded: false,
       })
+      if (guidanceSyncError) throw datastoreError('Guidance sync write', guidanceSyncError)
     }
 
     res.json({ success: true })
   } catch (err) {
     console.error('Sync API Error:', err.message)
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+    if (err.code === 'DATA_STORE_UNAVAILABLE') {
+      res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Your saved result could not be synchronized. Please try again.' })
+    } else {
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: 'An unexpected synchronization error occurred.' })
+    }
   }
 })
 
@@ -1292,16 +1564,23 @@ app.post('/api/re-onboard', async (req, res) => {
       if (updateErr) throw updateErr
 
       // Delete current guidance results & roadmaps so user can re-generate a new cache
-      await Promise.all([
-        client.from('guidance_results').delete().eq('student_id', user.id),
+      const admin = requireSupabaseAdmin('Guidance archive cleanup')
+      const [guidanceDelete, roadmapDelete] = await Promise.all([
+        admin.from('guidance_results').delete().eq('student_id', user.id),
         client.from('roadmaps').delete().eq('student_id', user.id)
       ])
+      if (guidanceDelete.error) throw datastoreError('Guidance archive cleanup', guidanceDelete.error)
+      if (roadmapDelete.error) throw datastoreError('Roadmap archive cleanup', roadmapDelete.error)
     }
 
     res.json({ success: true })
   } catch (err) {
     console.error('Re-onboard API Error:', err.message)
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+    if (err.code === 'DATA_STORE_UNAVAILABLE') {
+      res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'Your previous guidance could not be archived safely.' })
+    } else {
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: 'An unexpected re-onboarding error occurred.' })
+    }
   }
 })
 
@@ -1470,21 +1749,26 @@ app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
 // ── Email helper (Resend) ────────────────────────────────────────────────────
 async function sendEmail(to, subject, html) {
   const apiKey = config.resendApiKey
-  if (!apiKey) {
-    console.warn('[email] RESEND_API_KEY not set — skipping email send')
-    return
+  const from = config.resendFromEmail
+  if (!apiKey || !from) {
+    console.warn('[email] Resend sender is not configured — skipping email send')
+    return false
   }
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ from: 'Aage Kya? <noreply@aagekya.in>', to, subject, html }),
+      body: JSON.stringify({ from, to, subject, html }),
     })
-    const data = await res.json()
-    if (!res.ok) console.error('[email] Resend error:', data)
-    else console.log(`[email] Sent "${subject}" to ${to}`)
+    if (!res.ok) {
+      console.error(JSON.stringify({ event: 'email_send_failed', provider: 'resend', status: res.status }))
+      return false
+    }
+    console.log(JSON.stringify({ event: 'email_sent', provider: 'resend', subject }))
+    return true
   } catch (err) {
-    console.error('[email] Send failed:', err.message)
+    console.error(JSON.stringify({ event: 'email_send_failed', provider: 'resend', error: err.message }))
+    return false
   }
 }
 
@@ -1566,12 +1850,22 @@ Write a warm parent briefing. Include: 1. Why this suits your child, 2. Expected
     console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType: 'parent_summary', studentId: user.id, latencyMs: 0 }))
 
     // Cache it back to guidance_results
-    await client.from('guidance_results').update({ parent_summary: parentSummaryText }).eq('id', guidanceResultId)
+    const admin = requireSupabaseAdmin('Parent summary cache write')
+    const { error: parentSummaryWriteError } = await admin
+      .from('guidance_results')
+      .update({ parent_summary: parentSummaryText })
+      .eq('id', guidanceResultId)
+      .eq('student_id', user.id)
+    if (parentSummaryWriteError) throw datastoreError('Parent summary cache write', parentSummaryWriteError)
 
     res.json({ parent_summary: parentSummaryText, cached: false })
   } catch (err) {
     console.error('Parent summary error:', err.message)
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+    if (err.code === 'DATA_STORE_UNAVAILABLE') {
+      res.status(503).json({ error: 'DATA_STORE_UNAVAILABLE', message: 'The parent summary could not be saved safely.' })
+    } else {
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: 'The parent summary could not be generated.' })
+    }
   }
 })
 
@@ -1640,9 +1934,7 @@ app.post('/api/mentor-sessions', requireAuth(), sessionCreateLimiter, async (req
       .select()
       .single()
     if (error) throw error
-    // Send confirmation email (fire-and-forget)
-    const { data: profile } = await supabase.auth.admin?.getUserById?.(user.id).catch(() => ({ data: null })) || {}
-    sendEmail(
+    await sendEmail(
       user.email,
       'Mentor Session Requested — Aage Kya?',
       `<p>Hi there! Your mentor session request has been submitted. Your mentor will confirm shortly.</p>`

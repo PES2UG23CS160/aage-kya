@@ -13,6 +13,7 @@ export default function Navbar() {
     { to: '/',           label: 'Home' },
     { to: onboardingLink, label: 'Get Started' },
     { to: '/mentors',    label: 'Mentors' },
+    { to: '/fees',       label: 'Fees' },
     { to: '/qa',         label: 'Ask a Senior' },
     { to: '/official-readiness', label: 'Readiness' },
     { to: resultLink,     label: 'My Result' },

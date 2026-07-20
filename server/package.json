@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "test": "node --test test.js config/env.test.js"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
@@ -17,6 +17,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "groq-sdk": "^1.3.0"
+    "groq-sdk": "^1.3.0",
+    "zod": "^4.4.3"
   }
 }

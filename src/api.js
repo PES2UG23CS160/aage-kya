@@ -41,6 +41,14 @@ export async function getMentors() {
   return apiFetch('/api/mentors')
 }
 
+export async function getVerifiedFeePlans() {
+  return apiFetch('/api/fees/pilot')
+}
+
+export async function getVerifiedFeePlan(id) {
+  return apiFetch(`/api/fees/pilot/${encodeURIComponent(id)}`)
+}
+
 export async function postMentorApply(payload) {
   return apiFetch('/api/mentors/apply', {
     method: 'POST',

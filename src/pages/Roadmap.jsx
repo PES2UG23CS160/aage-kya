@@ -9,6 +9,21 @@ import {
   ProfileStrip,
 } from './Result'
 
+const PENDING_ROADMAP_KEY = 'aageKyaPendingRoadmap'
+const PENDING_ROADMAP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+function readPendingRoadmap() {
+  try {
+    const saved = localStorage.getItem(PENDING_ROADMAP_KEY)
+    if (!saved) return null
+    const pending = JSON.parse(saved)
+    const isFresh = Number.isFinite(pending?.createdAt) && Date.now() - pending.createdAt < PENDING_ROADMAP_MAX_AGE_MS
+    return pending?.option && isFresh ? pending : null
+  } catch {
+    return null
+  }
+}
+
 // ─── Backend API call ─────────────────────────────────────────────────────────
 
 async function requestRoadmap(form, option) {
@@ -40,16 +55,18 @@ async function requestRoadmap(form, option) {
 
 export default function Roadmap() {
   const { classLevel = 'class12' } = useParams()
-  const { state } = useLocation()
+  const location = useLocation()
+  const { state } = location
+  const pendingRoadmap = useMemo(readPendingRoadmap, [])
   
   // Try reading from Router state; fallback to localStorage
   const formData = useMemo(() => {
     const savedFormRaw = localStorage.getItem('aageKyaFormData')
-    const rawForm = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
+    const rawForm = state?.formData ?? pendingRoadmap?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
     return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
-  }, [classLevel, state?.formData])
+  }, [classLevel, pendingRoadmap, state?.formData])
   
-  const selectedOption = state?.option
+  const selectedOption = state?.option ?? pendingRoadmap?.option
 
   const [session, setSession] = useState(null)
   const [sessionLoading, setSessionLoading] = useState(true)
@@ -104,10 +121,21 @@ export default function Roadmap() {
     setAuthSuccess(false)
 
     try {
+      if (selectedOption) {
+        localStorage.setItem(PENDING_ROADMAP_KEY, JSON.stringify({
+          option: selectedOption,
+          formData,
+          returnPath: location.pathname,
+          createdAt: Date.now(),
+        }))
+      }
+
+      const allowedRedirectPaths = new Set(['/roadmap', '/class10/roadmap', '/class12/roadmap'])
+      const redirectPath = allowedRedirectPaths.has(location.pathname) ? location.pathname : '/roadmap'
       const { error } = await supabase.auth.signInWithOtp({
-        email: authEmail,
+        email: authEmail.trim(),
         options: {
-          emailRedirectTo: window.location.origin + '/roadmap', // redirects directly back here
+          emailRedirectTo: new URL(redirectPath, window.location.origin).toString(),
         },
       })
 
@@ -134,6 +162,7 @@ export default function Roadmap() {
         setRoadmap(cached.roadmapData)
         setOptionName(cached.optionPath)
         setStatus('success')
+        localStorage.removeItem(PENDING_ROADMAP_KEY)
         return
       }
     }
@@ -160,6 +189,7 @@ export default function Roadmap() {
         })
       )
       setStatus('success')
+      localStorage.removeItem(PENDING_ROADMAP_KEY)
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         setStatus('no_key')

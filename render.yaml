@@ -1,0 +1,38 @@
+# Safe, manual-deploy backend blueprint. Environment-specific values are
+# entered in Render and are never synchronized from this repository.
+services:
+  - type: web
+    name: aage-kya-api
+    runtime: node
+    rootDir: server
+    plan: free
+    autoDeploy: false
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: AI_TIMEOUT_MS
+        value: "30000"
+      - key: AI_MAX_RETRIES
+        value: "1"
+      # Both values are required by production startup validation.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false

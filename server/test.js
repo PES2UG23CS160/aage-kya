@@ -92,7 +92,14 @@ describe('Aage Kya? API Integration Tests', () => {
     const data = await res.json()
     assert.strictEqual(data.status, 'ok')
     assert.strictEqual(data.mode, 'degraded')
-    assert.deepStrictEqual(data.capabilities, { database: false, ai: false, email: false })
+    assert.deepStrictEqual(data.capabilities, {
+      database: false,
+      serverManagedDatabase: false,
+      ai: false,
+      agenticGuidance: false,
+      email: false,
+      publicAppUrl: false,
+    })
   })
 
   test('GET /api/health/ready should fail closed in degraded mode', async () => {
@@ -100,7 +107,8 @@ describe('Aage Kya? API Integration Tests', () => {
     assert.strictEqual(res.status, 503)
     const data = await res.json()
     assert.strictEqual(data.status, 'not_ready')
-    assert.deepStrictEqual(data.missing, ['database', 'ai'])
+    assert.deepStrictEqual(data.missing, ['database', 'server_managed_database', 'ai', 'email', 'public_app_url'])
+    assert.deepStrictEqual(data.failedDatabaseChecks, [])
   })
 
   test('GET /api/predictor/options should not serve prototype data by default', async () => {
@@ -108,6 +116,56 @@ describe('Aage Kya? API Integration Tests', () => {
     assert.strictEqual(res.status, 503)
     const data = await res.json()
     assert.strictEqual(data.error, 'PREDICTOR_DATA_UNAVAILABLE')
+  })
+
+  test('POST /api/fees/calculate should use deterministic component maths without AI or database configuration', async () => {
+    const res = await fetch(`${BASE_URL}/api/fees/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        institutionId: 'test-institution',
+        institutionName: 'Test Institution',
+        courseId: 'test-course',
+        courseName: 'Test Course',
+        academicYear: '2026-27',
+        durationYears: 1,
+        components: [{
+          code: 'tuition', label: 'Tuition', category: 'tuition',
+          amount: { low: 90000, expected: 100000, high: 110000 },
+          recurrence: 'annual', mandatory: true,
+        }],
+      }),
+    })
+    assert.strictEqual(res.status, 200)
+    const data = await res.json()
+    assert.strictEqual(data.calculation.totals.gross.expected, 100000)
+    assert.strictEqual(data.calculation.evidence.complete, false)
+  })
+
+  test('GET /api/fees/pilot should publish only reviewed source-complete plans', async () => {
+    const res = await fetch(`${BASE_URL}/api/fees/pilot`)
+    assert.strictEqual(res.status, 200)
+    const data = await res.json()
+    assert.strictEqual(data.plans.length, 6)
+    assert.strictEqual(data.sources.length, 4)
+    assert.ok(data.plans.every(plan => plan.evidenceComplete && plan.limitations.length > 0))
+    assert.strictEqual(
+      data.plans.find(plan => plan.id === 'iitb-ug-autumn-2026-open').netConfirmed.expected,
+      176600,
+    )
+  })
+
+  test('GET /api/fees/pilot/:id should return a component breakdown and reject unknown IDs', async () => {
+    const found = await fetch(`${BASE_URL}/api/fees/pilot/nitk-btech-first-year-2026-open-middle-income`)
+    assert.strictEqual(found.status, 200)
+    const data = await found.json()
+    assert.strictEqual(data.calculation.totals.netConfirmed.expected, 173277)
+    assert.ok(data.calculation.years[0].components.length > 10)
+    assert.ok(data.calculation.years[0].components.every(component => component.source?.url))
+
+    const missing = await fetch(`${BASE_URL}/api/fees/pilot/unknown-plan`)
+    assert.strictEqual(missing.status, 404)
+    assert.strictEqual((await missing.json()).error, 'FEE_PLAN_NOT_FOUND')
   })
 
   // 2. Mentors roster
