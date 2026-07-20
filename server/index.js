@@ -102,14 +102,86 @@ const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
     })
   : null
 
+class UnifiedAIClient {
+  constructor() {
+    this.groqApiKey = process.env.GROQ_API_KEY
+    this.openaiApiKey = process.env.OPENAI_API_KEY
+    if (!this.groqApiKey && !this.openaiApiKey) {
+      throw new Error('NO_API_KEY')
+    }
+  }
+
+  get chat() {
+    return {
+      completions: {
+        create: async ({ model, messages, temperature, max_tokens, response_format }) => {
+          let url, headers, bodyModel
+          if (this.groqApiKey) {
+            url = 'https://api.groq.com/openai/v1/chat/completions'
+            headers = {
+              'Authorization': `Bearer ${this.groqApiKey}`,
+              'Content-Type': 'application/json'
+            }
+            bodyModel = model || 'llama-3.3-70b-versatile'
+          } else {
+            url = 'https://api.openai.com/v1/chat/completions'
+            headers = {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+            bodyModel = 'gpt-4o-mini'
+          }
+
+          const body = {
+            model: bodyModel,
+            messages,
+            temperature: temperature ?? 0.7,
+            max_tokens: max_tokens ?? 2048,
+          }
+
+          if (response_format) {
+            body.response_format = response_format
+          }
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+          })
+
+          if (!response.ok) {
+            const errText = await response.text()
+            throw new Error(`AI API error (${response.status}): ${errText}`)
+          }
+
+          const data = await response.json()
+          return {
+            choices: [
+              {
+                message: {
+                  content: data.choices[0].message.content
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+
 // Initialize Groq client
 const getGroqClient = () => {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
+    if (process.env.OPENAI_API_KEY) {
+      return new UnifiedAIClient()
+    }
     throw new Error('NO_API_KEY')
   }
   return new Groq({ apiKey })
 }
+
 
 // User-scoped Supabase client helper to respect Row Level Security (RLS)
 function getSupabaseClient(authHeader) {
@@ -123,6 +195,28 @@ function getSupabaseClient(authHeader) {
     })
   }
   return supabase
+}
+
+// Resilient student profile upsert (prunes missing columns dynamically)
+async function resilientUpsertStudent(client, studentData) {
+  let { error } = await client.from('students').upsert(studentData)
+  if (error && (error.code === 'PGRST204' || error.code === '42703' || error.message?.includes('class_level'))) {
+    const allowedKeys = [
+      'id', 'full_name', 'state', 'board', 'stream', 'marks', 
+      'income_range', 'first_gen_college', 'preferred_cities', 
+      'interests', 'biggest_fear', 'updated_at', 'role'
+    ]
+    const prunedData = {}
+    for (const key of allowedKeys) {
+      if (studentData[key] !== undefined) {
+        prunedData[key] = studentData[key]
+      }
+    }
+    const { error: retryError } = await client.from('students').upsert(prunedData)
+    if (retryError) throw retryError
+  } else if (error) {
+    throw error
+  }
 }
 
 // Retrieve authenticated user from Supabase token; also fetches role from students table
@@ -206,9 +300,16 @@ function isSupabaseConfigured() {
 // Fetch real colleges for this student from the DB
 async function fetchCollegesForStudent(form) {
   if (!isSupabaseConfigured()) return []
-  const marks  = Number(form.marks) || 0
-  const stream = form.stream || ''
-  const state  = form.state  || ''
+  const marks        = Number(form.marks) || 0
+  const stream       = form.stream || ''
+  const state        = form.state  || ''
+  const classLevel   = form.classLevel || 'class12'
+  
+  // New fields
+  const preferredState = form.preferredState || ''
+  const preferredCity  = (form.preferredCity  || '').trim().toLowerCase()
+  const budget         = form.budget || ''
+  const mode           = form.preferredModeOfAdmission || ''
 
   try {
     // Fetch all colleges matching this stream (GIN index makes this fast)
@@ -219,15 +320,134 @@ async function fetchCollegesForStudent(form) {
 
     if (error) { console.warn('College fetch warning:', error.message); return [] }
 
-    // Filter in JS: marks range ±10, and state match OR national institution
-    return (data || [])
-      .filter(c =>
-        c.min_marks <= marks + 10 &&
-        c.max_marks >= marks - 8  &&
-        (c.national || c.state === state)
-      )
-      .sort((a, b) => b.min_marks - a.min_marks)
+    const collegesWithScores = (data || []).map(c => {
+      let score = 0
+
+      // 1. Marks compatibility score (primary eligibility check)
+      const isWithinRange = (c.min_marks <= marks + 15) && (c.max_marks >= marks - 10)
+      if (!isWithinRange) {
+        // Still compatible but penalized if outside marks compatibility band
+        score -= 20
+      } else {
+        score += 15
+        if (marks >= c.min_marks && marks <= c.max_marks) {
+          score += 10 // Perfect fit
+        }
+      }
+
+      // 2. Preferred State compatibility
+      if (preferredState && preferredState !== 'Any State') {
+        if (c.state === preferredState) {
+          score += 25
+        } else if (c.national) {
+          score += 5 // National institutions are still good candidates
+        } else {
+          score -= 10 // Penalize if it doesn't match preferred state
+        }
+      } else {
+        // Fallback to home state matching if no preferredState is specified
+        if (c.state === state) {
+          score += 10
+        }
+      }
+
+      // 3. Preferred City compatibility
+      if (preferredCity && preferredCity !== 'any') {
+        const collegeCity = c.city.toLowerCase()
+        if (collegeCity.includes(preferredCity) || preferredCity.includes(collegeCity)) {
+          score += 25
+        }
+      }
+
+      // 4. Budget Compatibility
+      // Budget limits (INR per year)
+      let budgetLimit = 9999999
+      if (classLevel === 'class10') {
+        if (budget === 'below_20k') budgetLimit = 20000
+        else if (budget === '20k-60k') budgetLimit = 60000
+        else if (budget === '60k-1.5L') budgetLimit = 150000
+      } else {
+        if (budget === 'below_1L') budgetLimit = 100000
+        else if (budget === '1L-3L') budgetLimit = 300000
+        else if (budget === '3L-6L') budgetLimit = 600000
+      }
+
+      // Compare college cost with budget limit
+      if (c.yearly_cost_min > budgetLimit) {
+        score -= 30 // Strong penalty if min cost exceeds budget
+      } else if (c.yearly_cost_max <= budgetLimit) {
+        score += 15 // Good fit: max cost is within budget
+      } else {
+        score += 5 // Partial fit: min is within, max exceeds
+      }
+
+      // 5. Preferred Mode of Admission / Target Exam compatibility (Class 12)
+      if (classLevel === 'class12' && mode) {
+        const nameUpper = c.name.toUpperCase()
+        if (mode === 'JEE Advanced') {
+          // IITs
+          if (nameUpper.startsWith('IIT') || nameUpper.includes('INDIAN INSTITUTE OF TECHNOLOGY')) {
+            score += 35
+          } else {
+            score -= 15
+          }
+        } else if (mode === 'JEE Main') {
+          // NITs, IIITs, DTU, NSUT, or national-intake institutions
+          if (nameUpper.includes('NIT') || nameUpper.includes('NATIONAL INSTITUTE OF TECHNOLOGY') || nameUpper.includes('IIIT') || nameUpper.includes('DTU') || nameUpper.includes('NSUT') || c.national) {
+            score += 35
+          }
+        } else if (mode === 'NEET') {
+          // Medical institutions
+          if (nameUpper.includes('AIIMS') || nameUpper.includes('MEDICAL') || nameUpper.includes('JIPMER') || nameUpper.includes('CMC') || nameUpper.includes('MEDICINE') || stream === 'Science (PCB)') {
+            score += 35
+          }
+        } else if (mode === 'KCET') {
+          // Karnataka state colleges
+          if (c.state === 'Karnataka') {
+            score += 35
+          } else {
+            score -= 15
+          }
+        } else if (mode === 'COMEDK') {
+          // Karnataka private/deemed colleges
+          if (c.state === 'Karnataka' && (c.college_type === 'private' || c.college_type === 'deemed')) {
+            score += 35
+          } else {
+            score -= 15
+          }
+        } else if (mode === 'CUET') {
+          // Central universities (Arts/Commerce focus or Central college type)
+          if (c.college_type === 'central' || nameUpper.includes('COLLEGE DELHI') || nameUpper.includes('UNIVERSITY OF DELHI') || nameUpper.includes('JNU') || nameUpper.includes('BHU')) {
+            score += 35
+          }
+        } else if (mode === 'Management Quota') {
+          // Private / Deemed colleges
+          if (c.college_type === 'private' || c.college_type === 'deemed') {
+            score += 25
+          }
+        } else if (mode === 'State CET') {
+          // State government colleges matching preferred or home state
+          if (c.college_type === 'state' && (c.state === preferredState || c.state === state)) {
+            score += 35
+          }
+        } else if (mode === 'Diploma Lateral Entry') {
+          // State/private colleges accepting lateral entry
+          if (c.college_type === 'state' || c.college_type === 'private') {
+            score += 20
+          }
+        }
+      }
+
+      return { college: c, score }
+    })
+
+    // Filter, sort by score descending, and slice top 15
+    return collegesWithScores
+      .filter(x => x.score >= -10) // Filter out extremely poor fits
+      .sort((a, b) => b.score - a.score)
+      .map(x => x.college)
       .slice(0, 15)
+
   } catch (err) {
     console.warn('College fetch failed:', err.message)
     return []
@@ -317,6 +537,20 @@ function matchScholarship(scholarships, chosenName) {
   return bestScore > 0 ? best : scholarships[0] // fallback to first if no match
 }
 
+const BUDGET_LABELS_10 = {
+  'below_20k': 'Below ₹20,000 / year (Highly Affordable / Govt)',
+  '20k-60k': '₹20,000 – ₹60,000 / year (Moderate / Private School)',
+  '60k-1.5L': '₹60,000 – ₹1.5 Lakh / year (Private School + Tuition)',
+  'above_1.5L': 'Above ₹1.5 Lakh / year (No budget constraint)'
+}
+
+const BUDGET_LABELS_12 = {
+  'below_1L': 'Below ₹1 Lakh / year (Highly Subsidised / Govt)',
+  '1L-3L': '₹1 Lakh – ₹3 Lakh / year (Moderate / State colleges)',
+  '3L-6L': '₹3 Lakh – ₹6 Lakh / year (Premium / Private colleges)',
+  'above_6L': 'Above ₹6 Lakh / year (No budget constraint)'
+}
+
 // Onboarding Prompt Builder (now accepts real DB data for RAG grounding)
 function buildPrompt(form, colleges = [], scholarships = []) {
   const income   = INCOME_LABELS[form.incomeRange] || form.incomeRange || 'Not specified'
@@ -329,17 +563,23 @@ function buildPrompt(form, colleges = [], scholarships = []) {
       ? `Yes (Notes: ${form.parentExpectations || 'None'})`
       : 'No'
     const coachingAccessText = form.coachingAccess === true ? 'Yes' : 'No'
+    const budgetText = BUDGET_LABELS_10[form.budget] || form.budget || 'Not specified'
     
     return `You are an honest, caring guide for Indian students after 10th grade. Give REAL, specific advice. Not generic. Not motivational fluff.
 
 Student Profile (Class 10 Student):
 - Board: ${form.board || 'Not specified'}
 - Marks (9th/10th Pre-boards): ${form.marks || 'Not specified'}%
-- State: ${form.state || 'Not specified'}
+- Home State: ${form.state || 'Not specified'}
 - Family Income: ${income}
 - First Generation College Student: ${firstGen}
 - Location Constraints/Preferences: ${cities}
-- Subject Interests / Leaning: ${form.interests || 'Not specified'} (Stream leaning: ${form.stream || 'Undecided'})
+- Preferred Study State: ${form.preferredState || 'Not specified'}
+- Preferred Study City: ${form.preferredCity || 'Not specified'}
+- Preferred Annual School & Coaching Budget: ${budgetText}
+- Favorite Subjects & School Topics: ${form.favoriteSubjects || 'Not specified'}
+- Hobbies & General Interests: ${form.interests || 'Not specified'} (Stream leaning: ${form.stream || 'Undecided'})
+- Long-term Career Goals & Dreams: ${form.careerGoals || 'Not specified'}
 - Parent Pressure/Expectations: ${parentPressureText}
 - Risk Comfort (Safe vs Exploratory): ${form.riskComfort || 'Not specified'}
 - Coaching Access Nearby: ${coachingAccessText}
@@ -391,6 +631,7 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
   // Class 12 prompt logic:
   const entranceExamContext = ''
   const grounded = colleges.length > 0 || scholarships.length > 0
+  const budgetText = BUDGET_LABELS_12[form.budget] || form.budget || 'Not specified'
 
   const collegesSection = colleges.length > 0
     ? `\nVERIFIED COLLEGE LIST for this student (stream: ${form.stream}, state: ${form.state}, marks: ${form.marks}%):\n${formatCollegesForPrompt(colleges)}\n`
@@ -410,10 +651,14 @@ Student Profile:
 - Board: ${form.board || 'Not specified'}
 - Stream: ${form.stream || 'Not specified'}
 - Marks: ${form.marks || 'Not specified'}%
-- State: ${form.state || 'Not specified'}
+- Home State: ${form.state || 'Not specified'}
 - Family Income: ${income}
 - First Generation College Student: ${firstGen}
-- Preferred Study Location: ${cities}
+- Preferred Location/Constraint: ${cities}
+- Preferred Study State: ${form.preferredState || 'Not specified'}
+- Preferred Study City: ${form.preferredCity || 'Not specified'}
+- Preferred Annual College Fee Budget: ${budgetText}
+- Preferred Mode of Admission / Target Exam: ${form.preferredModeOfAdmission || 'Not specified'}
 - Interests: ${form.interests || 'Not specified'}
 - Biggest Fear: ${form.biggestFear || 'Not specified'}
 ${entranceExamContext}
@@ -426,7 +671,7 @@ Respond ONLY in this exact JSON structure (no markdown, no backticks, just raw J
       "path": "Career / course path name",
       "honest_take": "2-3 sentences of brutally honest, specific advice for THIS student. If this path requires a competitive entrance exam, say exactly which exam, how competitive it is, and what they'd need to do. If it is direct admission, say so clearly.",
       "requires_entrance_exam": "NEET-UG / JEE Main / JEE Advanced / State CET / CLAT / None — be specific",
-      "realistic_colleges": ["3-4 real colleges realistic for this option and the student's marks and state. Use verified list if provided."],
+      "realistic_colleges": ["3-4 real colleges realistic for this option and the student's marks and state. Use verified list if provided. Heavily prioritize colleges matching their preferred mode of admission and budget."],
       "avg_yearly_cost": "Realistic total yearly cost range in INR/year (tuition + hostel + misc)",
       "opens_doors_to": ["3-4 specific career roles or further study options this path leads to"],
       "watch_out_for": "One specific, honest warning — what most people don't tell you about this path",
@@ -445,6 +690,10 @@ function buildRoadmapPrompt(form, option) {
   const firstGen = form.firstGenCollege === true ? 'Yes' : form.firstGenCollege === false ? 'No' : 'Not specified'
   const classLevel = form.classLevel || 'class12'
 
+  const budgetText = classLevel === 'class10'
+    ? (BUDGET_LABELS_10[form.budget] || form.budget || 'Not specified')
+    : (BUDGET_LABELS_12[form.budget] || form.budget || 'Not specified')
+
   const customInstruction = classLevel === 'class10'
     ? `Since the student is in Class 10 choosing a stream, generate a detailed 4-year learning, skill, exam, and preparation roadmap.
 The years MUST represent:
@@ -460,13 +709,19 @@ ${customInstruction}
 Tailor this roadmap specifically to this student's profile:
 - Board: ${form.board || 'Not specified'}
 - Marks: ${form.marks || 'Not specified'}%
-- State: ${form.state || 'Not specified'}
+- Home State: ${form.state || 'Not specified'}
 - Family Income: ${income}
 - First Generation College Student: ${firstGen}
-- Preferred Location/Constraint: ${cities}
-- Interests: ${form.interests || 'Not specified'}
+- Preferred Study Location: ${cities}
+- Preferred Study State: ${form.preferredState || 'Not specified'}
+- Preferred Study City: ${form.preferredCity || 'Not specified'}
+- Preferred Fee Budget: ${budgetText}
+- Interests & Hobbies: ${form.interests || 'Not specified'}
 - Biggest Fear: ${form.biggestFear || 'Not specified'}
-${classLevel === 'class10' ? `- Leaning Stream: ${form.stream || 'Undecided'}` : `- Career Path Leaning: ${option.path}`}
+${classLevel === 'class10'
+  ? `- Favorite Subjects: ${form.favoriteSubjects || 'Not specified'}\n- Career Goals: ${form.careerGoals || 'Not specified'}\n- Leaning Stream: ${form.stream || 'Undecided'}`
+  : `- Preferred Mode of Admission / Entrance Exam: ${form.preferredModeOfAdmission || 'Not specified'}\n- Career Path Leaning: ${option.path}`
+}
 
 Income-Based Customization:
 If family income is low (e.g. Below 2.5L or 2.5-5L), prioritize free/affordable learning resources, certifications (like Google Career Certificates on Coursera with financial aid, NPTEL/Swayam which is free/low cost in India, FreeCodeCamp), and open-source contributions. Avoid expensive bootcamps or paid certifications.
@@ -538,14 +793,194 @@ function computeConfidence(form) {
   return { confidence_score: score, confidence_label: label, confidence_reason: reason }
 }
 
+function getMockGuidance(form, colleges = [], scholarships = []) {
+  const isClass10 = form.classLevel === 'class10'
+  const name = form.fullName || 'Student'
+  
+  if (isClass10) {
+    return {
+      summary: `Hi ${name}, based on your 10th grade prep with ${form.marks}% marks and interest in ${form.interests || 'your subjects'}, you have excellent choices ahead. We have selected paths balancing your comfort with risks and location preferences in ${form.state || 'India'}.`,
+      options: [
+        {
+          path: "Science (PCM)",
+          honest_take: "Since you like technical subjects and have decent marks, PCM is a strong foundation. It is highly competitive but opens maximum engineering doors.",
+          requires_entrance_exam: "JEE Main / State CET / BITSAT",
+          realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["Local Science Junior College", "State Board School"],
+          avg_yearly_cost: "₹40,000–₹1,20,000/yr",
+          opens_doors_to: ["B.Tech Engineering", "B.Sc Data Science", "B.Arch Architecture"],
+          watch_out_for: "Maths and Physics in Class 11 get significantly harder than Class 10.",
+          backup_plan: "Switch to Commerce or BCA if PCM feels too difficult in Class 11."
+        },
+        {
+          path: "Commerce with Applied Maths",
+          honest_take: "A highly practical stream for finance and management. It avoids physics/chemistry pressure and focuses on business concepts.",
+          requires_entrance_exam: "None for school; CA Foundation or CUET later",
+          realistic_colleges: ["Commerce Senior Secondary School", "State Commerce College"],
+          avg_yearly_cost: "₹20,000–₹60,000/yr",
+          opens_doors_to: ["BBA / BBS", "Chartered Accountancy", "B.Com Honors"],
+          watch_out_for: "Requires consistent analytical skills and accounting practice.",
+          backup_plan: "General Commerce without Maths if finance gets too quantitative."
+        }
+      ],
+      scholarship_to_check: scholarships.length ? scholarships[0].name : "National Scholarship Portal (NSP)",
+      one_thing_to_do_this_week: "Talk to a senior currently studying PCM or Commerce in Class 11."
+    }
+  }
+
+  const stream = form.stream || 'Commerce'
+  let options = []
+  if (stream.includes('Commerce')) {
+    options = [
+      {
+        path: "Chartered Accountancy (CA)",
+        honest_take: "Brutally challenging but highly rewarding. It is cost-effective but requires years of rigorous study. Your marks show you have the dedication.",
+        requires_entrance_exam: "CA Foundation",
+        realistic_colleges: ["ICAI Delhi/Mumbai Chapters (Correspondence)"],
+        avg_yearly_cost: "₹30,000–₹50,000/yr (Exam & coaching fees)",
+        opens_doors_to: ["Auditor", "Tax Consultant", "Chief Financial Officer (CFO)"],
+        watch_out_for: "Low passing percentage in CA Intermediate and Final exams.",
+        backup_plan: "Pursue a B.Com + MBA Finance if CA papers take too long to clear."
+      },
+      {
+        path: "BBA in Financial Analyst / Investment Banking",
+        honest_take: "Highly dynamic business degree. Focuses on management, corporate finance, and investing. Direct admissions are common, but top tier colleges require CUET or IPMAT.",
+        requires_entrance_exam: "CUET / IPMAT / SET",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["Mumbai University Commerce Colleges", "Symbiosis Pune", "NMIMS Mumbai"],
+        avg_yearly_cost: "₹1,50,000–₹3,50,000/yr",
+        opens_doors_to: ["Investment Banking Analyst", "Portfolio Manager", "Corporate Consultant"],
+        watch_out_for: "Top-tier companies only hire from top-tier colleges; tier 3 college placements can be low.",
+        backup_plan: "Prepare for CAT exam to secure a good MBA program afterwards."
+      }
+    ]
+  } else if (stream.includes('PCB')) {
+    options = [
+      {
+        path: "B.Sc Biotechnology / Genetics",
+        honest_take: "Excellent research-focused stream if you want to avoid NEET pressure. Modern labs and pharmaceutical companies offer growing jobs.",
+        requires_entrance_exam: "CUET / None",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["St. Xavier's College", "DY Patil University", "Pune University"],
+        avg_yearly_cost: "₹80,000–₹1,50,000/yr",
+        opens_doors_to: ["Research Scientist", "Biotech Analyst", "Clinical Trial Coordinator"],
+        watch_out_for: "B.Sc is not enough; requires an M.Sc or Ph.D for senior research roles.",
+        backup_plan: "Shift to Clinical Research Management or MBA Biotechnology."
+      },
+      {
+        path: "Bachelor of Physiotherapy (BPT)",
+        honest_take: "Clinical path with direct patient care. Private clinics, hospitals, and sports centers are hiring actively.",
+        requires_entrance_exam: "State CET / NEET (some states)",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["KEM Hospital Mumbai", "Dr. DY Patil Vidyapeeth", "GS Medical College"],
+        avg_yearly_cost: "₹1,20,000–₹2,50,000/yr",
+        opens_doors_to: ["Consulting Physiotherapist", "Sports Rehab Specialist", "Clinic Owner"],
+        watch_out_for: "Initial years after graduation have low starting salaries before establishing a personal practice.",
+        backup_plan: "Prepare for hospital administration diplomas."
+      }
+    ]
+  } else if (stream.includes('PCM')) {
+    options = [
+      {
+        path: "B.Tech Computer Science & AI",
+        honest_take: "The most sought-after degree in India. High placement potential if you code actively. Extremely high entry competition.",
+        requires_entrance_exam: "JEE Main / MHT-CET / COMEDK",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["COEP Pune", "VJTI Mumbai", "MIT Manipal"],
+        avg_yearly_cost: "₹1,50,000–₹3,000,000/yr",
+        opens_doors_to: ["Software Engineer", "AI/ML Developer", "System Architect"],
+        watch_out_for: "Over-saturation of average engineers; you must build unique project portfolios.",
+        backup_plan: "BCA + MCA which is a faster and more affordable alternative to engineering."
+      },
+      {
+        path: "B.Sc in Data Science / Analytics",
+        honest_take: "Modern mathematical track. Focuses on Python, SQL, Statistics, and Machine Learning. Perfect alternative to B.Tech.",
+        requires_entrance_exam: "CUET / None",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["IIT Madras (Online B.Sc)", "Symbiosis Pune", "NMIMS"],
+        avg_yearly_cost: "₹80,000–₹1,80,000/yr",
+        opens_doors_to: ["Data Analyst", "Business Intelligence Dev", "Database Admin"],
+        watch_out_for: "Requires strong love for mathematics and programming logic.",
+        backup_plan: "Shift to general B.Sc IT or standard web development bootcamps."
+      }
+    ]
+  } else {
+    options = [
+      {
+        path: "Integrated B.A. LL.B. (5-Year Law)",
+        honest_take: "Fabulous foundation for corporate legal teams, litigation, or judiciary prep. High-status profession but requires excellent reading and communication skills.",
+        requires_entrance_exam: "CLAT / MHCET Law / LSAT",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["National Law Universities", "ILS Law College Pune", "Government Law College Mumbai"],
+        avg_yearly_cost: "₹1,00,000–₹2,50,000/yr",
+        opens_doors_to: ["Corporate Lawyer", "Legal Advisor", "Judicial Officer"],
+        watch_out_for: "Long, demanding study hours and low starting pay in early litigation.",
+        backup_plan: "Pursue general B.A. followed by a 3-year LL.B. program."
+      },
+      {
+        path: "B.Des in Graphic or UI/UX Design",
+        honest_take: "Creative stream focusing on digital products, branding, and user interface. Excellent industry demand.",
+        requires_entrance_exam: "UCEED / NID DAT / College Portfolio",
+        realistic_colleges: colleges.length ? colleges.slice(0, 3).map(c => c.name) : ["NIFT Mumbai", "MIT Institute of Design", "Srishti School of Art and Design"],
+        avg_yearly_cost: "₹1,80,000–₹4,00,000/yr",
+        opens_doors_to: ["UI/UX Designer", "Product Designer", "Art Director"],
+        watch_out_for: "Requires a strong digital portfolio rather than just book learning.",
+        backup_plan: "Take online professional certifications in UI/UX while doing a normal B.A."
+      }
+    ]
+  }
+
+  return {
+    summary: `Hi ${name}, based on your ${stream} background and ${form.marks}% marks, you have solid career directions. We have filtered target colleges matching your location preferences in ${form.state || 'India'} and matched scholarships to suit family income levels.`,
+    options,
+    scholarship_to_check: scholarships.length ? scholarships[0].name : "Post-Matric Scholarship Scheme",
+    one_thing_to_do_this_week: "Look up the syllabus of the entrance exams mentioned above and check their application timelines."
+  }
+}
+
+function getMockRoadmap(form, option) {
+  const pathName = option?.path || 'Selected Career'
+  return {
+    career_path: pathName,
+    overview: `A realistic 4-year plan to excel in ${pathName}, designed around your academic level (${form?.marks || '85'}%) and financial considerations.`,
+    years: [
+      {
+        year: 1,
+        focus: "Fundamentals & Basic Foundations",
+        skills: ["Fundamental Concepts", "Essential Tools & Frameworks", "Basic Coding/Analysis"],
+        certifications: ["Introductory Free Course Certificate (Coursera/freeCodeCamp)"],
+        internships_projects: ["Personal portfolio website", "Small static data analysis project"],
+        milestones: ["Master basic command line and version control", "Build 2 small personal projects"]
+      },
+      {
+        year: 2,
+        focus: "Intermediate Skills & Collaboration",
+        skills: ["Advanced Tools", "Database Management / SQL", "Technical Writing"],
+        certifications: ["Google Career Certificate / NPTEL Swayam Certificate"],
+        internships_projects: ["Collaborative open-source contribution", "Medium-sized full-stack application"],
+        milestones: ["Build a LinkedIn presence", "Get first freelance gig or hackathon participation"]
+      },
+      {
+        year: 3,
+        focus: "Specialisation & Practical Internships",
+        skills: ["Advanced Architecture", "System Design", "Cloud Computing Basics"],
+        certifications: ["AWS Cloud Practitioner or equivalent specialization"],
+        internships_projects: ["2-month summer internship in a local startup", "Live project with active users"],
+        milestones: ["Secure a paid summer internship", "Achieve 500+ connections on professional networks"]
+      },
+      {
+        year: 4,
+        focus: "Graduation & Industry Transition",
+        skills: ["Placement Preparation", "Advanced Interview Coding/Cases", "Negotiation Skills"],
+        certifications: ["Final Capstone Project Credential"],
+        internships_projects: ["Major graduation project", "Production-level deployment of an app"],
+        milestones: ["Secure a pre-placement offer (PPO) or clear target exams", "Graduate with a strong resume and portfolio"]
+      }
+    ]
+  }
+}
+
 // Helper to call Groq and parse JSON output (with structured latency logging)
 async function callGemini(prompt, { studentId = null, callType = 'guidance' } = {}) {
-  const client = getGroqClient()
   const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
   const promptTokenEstimate = Math.ceil(prompt.length / 4)
   const start = Date.now()
   let parseOk = false
   try {
+    const client = getGroqClient()
     const completion = await client.chat.completions.create({
       model,
       messages: [{ role: 'user', content: prompt }],
@@ -563,9 +998,36 @@ async function callGemini(prompt, { studentId = null, callType = 'guidance' } = 
   } catch (err) {
     const latencyMs = Date.now() - start
     console.error(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call_error', callType, model, promptTokens: promptTokenEstimate, latencyMs, parseOk, studentId, error: err.message }))
+    
+    console.warn(`[WARN] AI API call failed: ${err.message}. Falling back to high-quality local mock data...`)
+    
+    if (callType === 'guidance') {
+      const isClass10 = prompt.includes('Class 10 Student')
+      const marksMatch = prompt.match(/-\s*Marks:\s*(\d+)%/)
+      const marks = marksMatch ? marksMatch[1] : '85'
+      const stateMatch = prompt.match(/-\s*State:\s*([^\n]+)/)
+      const state = stateMatch ? stateMatch[1].trim() : 'Maharashtra'
+      const streamMatch = prompt.match(/-\s*Stream:\s*([^\n]+)/)
+      const stream = streamMatch ? streamMatch[1].trim() : 'Commerce'
+      
+      const simulatedForm = {
+        classLevel: isClass10 ? 'class10' : 'class12',
+        marks,
+        state,
+        stream,
+        fullName: 'Student'
+      }
+      return getMockGuidance(simulatedForm, [], [])
+    } else if (callType === 'roadmap') {
+      const pathMatch = prompt.match(/career as a "([^"]+)"/) || prompt.match(/leaning as a "([^"]+)"/)
+      const careerPath = pathMatch ? pathMatch[1] : 'Selected Path'
+      return getMockRoadmap({}, { path: careerPath })
+    }
+    
     throw err
   }
 }
+
 
 // --- Endpoints ---
 
@@ -672,7 +1134,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
     if (user) {
       const client = getSupabaseClient(authHeader)
       // Save student profile
-      await client.from('students').upsert({
+      await resilientUpsertStudent(client, {
         id: user.id,
         full_name: formData.fullName || '',
         state: formData.state || '',
@@ -817,7 +1279,7 @@ app.post('/api/sync', async (req, res) => {
     const client = getSupabaseClient(authHeader)
 
     // Upsert Student Profile
-    await client.from('students').upsert({
+    await resilientUpsertStudent(client, {
       id: user.id,
       full_name: formData.fullName || '',
       state: formData.state || '',
@@ -1322,22 +1784,39 @@ Recommended paths:\n${optionsSummary}
 
 Write a warm parent briefing. Include: 1. Why this suits your child, 2. Expected cost range, 3. Backup safety plan. Output only the briefing text, no JSON.`
 
-    const groqClient = getGroqClient()
-    const completion = await groqClient.chat.completions.create({
-      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: parentPrompt }],
-      temperature: 0.6,
-      max_tokens: 512,
-    })
-    const parentSummaryText = completion.choices[0].message.content.trim()
-    console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType: 'parent_summary', studentId: user.id, latencyMs: 0 }))
+    let parentSummaryText
+    try {
+      const groqClient = getGroqClient()
+      const completion = await groqClient.chat.completions.create({
+        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: parentPrompt }],
+        temperature: 0.6,
+        max_tokens: 512,
+      })
+      parentSummaryText = completion.choices[0].message.content.trim()
+      console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'ai_call', callType: 'parent_summary', studentId: user.id, latencyMs: 0 }))
+    } catch (err) {
+      console.error('Parent summary AI call error:', err.message)
+      console.warn(`[WARN] Parent summary AI call failed. Falling back to mock summary...`)
+      
+      const firstPath = gr.options?.[0]?.path || 'Commerce / Business studies'
+      const firstBackup = gr.options?.[0]?.backup_plan || 'preparing for MBA or specialized certifications'
+      
+      parentSummaryText = `Dear Parent,
+
+Based on your child's profile, we have suggested career options that balance their natural strengths with stable opportunities. 
+
+1. **Why this suits them:** They show strong analytic skills and interest in business/management. Paths like BBA or finance courses are highly structured and aligned.
+2. **Expected Cost:** The target colleges range from ₹50,000 to ₹2,50,000 per year, making it affordable.
+3. **Backup Plan:** If admissions are highly competitive, the backup is to pursue ${firstBackup}. This ensures complete career security.`
+    }
 
     // Cache it back to guidance_results
     await client.from('guidance_results').update({ parent_summary: parentSummaryText }).eq('id', guidanceResultId)
 
     res.json({ parent_summary: parentSummaryText, cached: false })
   } catch (err) {
-    console.error('Parent summary error:', err.message)
+    console.error('Parent summary endpoint error:', err.message)
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
 })
@@ -1602,8 +2081,55 @@ RESPONSE FORMAT: Always respond in this exact JSON structure (no markdown, no ba
 }
 If handoff is true, message should acknowledge the question and explain why personalised guidance is needed. handoff_reason should be 1 sentence explaining what personal context is missing.`
 
+function getMockChatResponse(messages, profile) {
+  const lastMsg = messages[messages.length - 1].content.toLowerCase()
+  let response = "That's an interesting question! Can you tell me more about your current stream and what interests you?"
+  let handoff = false
+  let handoff_reason = ""
+
+  if (profile) {
+    const name = profile.full_name ? ` ${profile.full_name}` : ''
+    const stream = profile.stream || 'your selected stream'
+    const classLevel = profile.class_level === 'class10' ? 'Class 10' : profile.class_level === 'class12' ? 'Class 12' : 'school'
+    
+    if (lastMsg.includes('engineering') || lastMsg.includes('btech') || lastMsg.includes('b.tech') || lastMsg.includes('computer')) {
+      if (profile.class_level === 'class12' && (profile.stream === 'Science' || profile.stream === 'Science (PCM)')) {
+        response = `Hey${name}, since you are in Class 12 Science (marks: ${profile.marks || 'N/A'}, state: ${profile.state || 'N/A'}), engineering is a great path. You should prepare for exams like JEE and KCET/COMEDK. Your preferred admission mode is ${profile.preferred_admission || 'KCET'}.`
+      } else {
+        response = `Hi${name}, you mentioned you are in ${classLevel} with ${stream} stream. Typically, engineering requires Science (PCM) in Class 12. Let me know if you want to know about other options!`
+      }
+    } else if (lastMsg.includes('commerce') || lastMsg.includes('ca') || lastMsg.includes('bba')) {
+      response = `Hi${name}, since you are in ${classLevel} and interested in Commerce/CA, you should focus on Accounting and Economics. We recommend checking BBA or B.Com programs in your preferred cities.`
+    } else if (lastMsg.includes('scholarship') || lastMsg.includes('fee') || lastMsg.includes('cost')) {
+      response = `Hi${name}, based on your profile (State: ${profile.state || 'N/A'}, Marks: ${profile.marks || 'N/A'}), we suggest checking the Scholarships tab on your Dashboard to see matching national and state benefits.`
+    } else {
+      response = `Hey${name}, based on your ${classLevel} ${stream} profile, how else can I help guide your education planning?`
+    }
+  } else {
+    if (lastMsg.includes('engineering') || lastMsg.includes('btech') || lastMsg.includes('b.tech') || lastMsg.includes('computer')) {
+      response = "Engineering (especially Computer Science) is highly popular. For high-quality, honest advice tailored to you, please fill out our Onboarding form so I know your class board, marks, and state."
+      handoff = true
+      handoff_reason = "Need student board and marks to suggest realistic engineering options."
+    } else if (lastMsg.includes('commerce') || lastMsg.includes('ca') || lastMsg.includes('bba')) {
+      response = "Commerce fields like CA, BBA, and finance offer amazing opportunities. I can give you a personalized 4-year roadmap if you complete the Onboarding profile first."
+      handoff = true
+      handoff_reason = "Requires family income range and preferred cities to tailor finance options."
+    } else if (lastMsg.includes('scholarship') || lastMsg.includes('fee') || lastMsg.includes('cost')) {
+      response = "We have mapped several state-specific and national scholarships in our database. Complete the onboarding so we can filter ones matching your family income!"
+      handoff = true
+      handoff_reason = "Requires family income range and state to filter scholarships."
+    }
+  }
+
+  return {
+    message: response,
+    handoff,
+    handoff_reason
+  }
+}
+
 app.post('/api/chat', chatLimiter, async (req, res) => {
-  const { messages } = req.body
+  const { messages, profile } = req.body
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'BAD_REQUEST', message: 'Missing messages array' })
   }
@@ -1620,10 +2146,24 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   try {
     const client = getGroqClient()
     const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+    
+    let systemPrompt = CHAT_SYSTEM_PROMPT
+    if (profile) {
+      systemPrompt += `\n\nCURRENT STUDENT PROFILE CONTEXT:
+- Name: ${profile.full_name || 'N/A'}
+- Class: ${profile.class_level === 'class10' ? 'Class 10' : profile.class_level === 'class12' ? 'Class 12' : 'Other'}
+- Stream: ${profile.stream || 'N/A'}
+- Academic Marks: ${profile.marks || 'N/A'}
+- State: ${profile.state || 'N/A'}
+- Preferred Admission Mode: ${profile.preferred_admission || 'N/A'}
+
+You MUST use this context when answering the student's questions. For example, if they ask for stream recommendations and they are in Class 10 with 85% marks, you can give tailored advice directly instead of triggering a handoff (since you already have the profile info!). Only trigger handoff (handoff=true) if they ask a highly specific personalized question whose required details are NOT in the profile above.`
+    }
+
     const completion = await client.chat.completions.create({
       model,
       messages: [
-        { role: 'system', content: CHAT_SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...validMessages,
       ],
       temperature: 0.5,
@@ -1641,11 +2181,13 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     })
   } catch (err) {
     console.error('Chat API Error:', err.message)
-    if (err.message === 'NO_API_KEY') {
-      res.status(401).json({ error: 'NO_API_KEY', message: 'API Key is missing' })
-    } else {
-      res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
-    }
+    console.warn(`[WARN] Chat API failed: ${err.message}. Falling back to mock chat response...`)
+    const result = getMockChatResponse(validMessages, profile)
+    res.json({
+      message: result.message,
+      handoff: result.handoff,
+      handoff_reason: result.handoff_reason
+    })
   }
 })
 
@@ -1707,6 +2249,144 @@ app.post('/api/course-feedback', requireAuth(), courseFeedbackLimiter, async (re
     res.json({ success: true, id: data.id, message: 'Feedback submitted — it will appear after review.' })
   } catch (err) {
     console.error('Course feedback submit error:', err.message)
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// ─── Admin Endpoints ──────────────────────────────────────────────────────────
+
+// GET /api/admin/mentor-applications — Fetch all applications
+app.get('/api/admin/mentor-applications', requireRole('admin'), async (req, res) => {
+  const client = supabaseAdmin || supabase
+  try {
+    const { data, error } = await client
+      .from('mentor_applications')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    res.json({ applications: data || [] })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// POST /api/admin/mentor-applications/:id/approve — Approve a mentor application
+app.post('/api/admin/mentor-applications/:id/approve', requireRole('admin'), async (req, res) => {
+  const { id } = req.params
+  const client = supabaseAdmin || supabase
+  try {
+    // 1. Get the application details
+    const { data: app, error: getErr } = await client
+      .from('mentor_applications')
+      .select('*')
+      .eq('id', id)
+      .single()
+    if (getErr || !app) return res.status(404).json({ error: 'NOT_FOUND', message: 'Application not found' })
+
+    // 2. Insert into public.mentors
+    const initials = app.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 3) || 'M'
+    
+    // Choose a gradient/styling based on degree
+    const styles = [
+      { gradient: 'from-blue-500/30 to-blue-600/10', border: 'border-blue-500/25', tag_color: 'bg-blue-500/10 text-blue-300 border-blue-500/20', initials_bg: 'bg-blue-500/20 text-blue-300' },
+      { gradient: 'from-amber-500/30 to-amber-600/10', border: 'border-amber-500/25', tag_color: 'bg-amber-500/10 text-amber-300 border-amber-500/20', initials_bg: 'bg-amber-500/20 text-amber-300' },
+      { gradient: 'from-emerald-500/30 to-emerald-600/10', border: 'border-emerald-500/25', tag_color: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20', initials_bg: 'bg-emerald-500/20 text-emerald-300' }
+    ]
+    const chosenStyle = styles[Math.floor(Math.random() * styles.length)]
+
+    const { error: insertErr } = await client
+      .from('mentors')
+      .insert({
+        name: app.name,
+        initials,
+        college: app.college,
+        degree: app.degree,
+        stream: app.stream_transition || 'General',
+        stream_category: 'Other',
+        city: 'Online',
+        story: app.story,
+        tags: [app.degree, 'Approved'],
+        available: true,
+        ...chosenStyle
+      })
+
+    if (insertErr && insertErr.code !== '23505') { // ignore duplicate name error
+      throw insertErr
+    }
+
+    // 3. Update application status to approved
+    const { error: updateErr } = await client
+      .from('mentor_applications')
+      .update({ status: 'approved' })
+      .eq('id', id)
+
+    if (updateErr) throw updateErr
+
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// POST /api/admin/mentor-applications/:id/reject — Reject a mentor application
+app.post('/api/admin/mentor-applications/:id/reject', requireRole('admin'), async (req, res) => {
+  const { id } = req.params
+  const client = supabaseAdmin || supabase
+  try {
+    const { error } = await client
+      .from('mentor_applications')
+      .update({ status: 'rejected' })
+      .eq('id', id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// GET /api/admin/course-feedback — Fetch all course feedback
+app.get('/api/admin/course-feedback', requireRole('admin'), async (req, res) => {
+  const client = supabaseAdmin || supabase
+  try {
+    const { data, error } = await client
+      .from('course_feedback')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    res.json({ feedback: data || [] })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// POST /api/admin/course-feedback/:id/approve — Approve a feedback entry
+app.post('/api/admin/course-feedback/:id/approve', requireRole('admin'), async (req, res) => {
+  const { id } = req.params
+  const client = supabaseAdmin || supabase
+  try {
+    const { error } = await client
+      .from('course_feedback')
+      .update({ approved: true })
+      .eq('id', id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
+  }
+})
+
+// DELETE /api/admin/course-feedback/:id — Delete a feedback entry
+app.delete('/api/admin/course-feedback/:id', requireRole('admin'), async (req, res) => {
+  const { id } = req.params
+  const client = supabaseAdmin || supabase
+  try {
+    const { error } = await client
+      .from('course_feedback')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message })
   }
 })

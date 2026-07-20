@@ -1,6 +1,6 @@
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
-import { AuthProvider } from './context/AuthContext'
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
+import { useEffect, useState, lazy, Suspense } from 'react'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import Landing from './pages/Landing'
@@ -12,10 +12,51 @@ import Roadmap from './pages/Roadmap'
 import Dashboard from './pages/Dashboard'
 import PrintReport from './pages/PrintReport'
 import MentorDashboard from './pages/MentorDashboard'
+import AdminDashboard from './pages/AdminDashboard'
 import OfficialReadiness from './pages/OfficialReadiness'
 import Scenarios from './pages/Scenarios'
 import QABoard from './pages/QABoard'
 import Chatbot from './pages/Chatbot'
+import GlobalSearch from './components/GlobalSearch'
+
+// New pages
+import CompetitiveExams from './pages/CompetitiveExams'
+import StudyAbroad from './pages/StudyAbroad'
+import CareerPipeline from './pages/CareerPipeline'
+import Scholarships from './pages/Scholarships'
+import CollegeOverview from './pages/CollegeOverview'
+import MentorApplication from './pages/MentorApplication'
+
+function ProtectedRoute({ children, allowedRoles }) {
+  const { user, profile, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0A0F1E] text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-saffron to-saffron-dark flex items-center justify-center text-white font-bold text-sm font-display animate-pulse">
+            AK
+          </div>
+          <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-saffron" />
+          <p className="text-gray-500 text-xs">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/" replace />
+  }
+
+  if (allowedRoles) {
+    const userRole = profile?.role || 'student'
+    if (!allowedRoles.includes(userRole)) {
+      return <Navigate to="/dashboard" replace />
+    }
+  }
+
+  return children
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -31,37 +72,69 @@ function AnimatedRoutes() {
     <div key={location.pathname} className="page-enter flex-1">
       <Routes location={location}>
         <Route path="/"                  element={<Landing />} />
-        <Route path="/onboarding"        element={<Onboarding />} />
-        <Route path="/:classLevel/onboarding" element={<Onboarding />} />
-        <Route path="/result"            element={<Result />} />
-        <Route path="/:classLevel/result" element={<Result />} />
+        
+        {/* Protected Student Routes */}
+        <Route path="/onboarding"        element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+        <Route path="/:classLevel/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+        <Route path="/result"            element={<ProtectedRoute><Result /></ProtectedRoute>} />
+        <Route path="/:classLevel/result" element={<ProtectedRoute><Result /></ProtectedRoute>} />
+        <Route path="/roadmap"           element={<ProtectedRoute><Roadmap /></ProtectedRoute>} />
+        <Route path="/:classLevel/roadmap" element={<ProtectedRoute><Roadmap /></ProtectedRoute>} />
+        <Route path="/profile"           element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/dashboard"         element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/result/print"      element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
+        <Route path="/:classLevel/result/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
+        <Route path="/scenarios"         element={<ProtectedRoute><Scenarios /></ProtectedRoute>} />
+        
+        {/* Protected Mentor Routes */}
+        <Route path="/mentor-dashboard"  element={<ProtectedRoute allowedRoles={['mentor']}><MentorDashboard /></ProtectedRoute>} />
+        
+        {/* Protected Admin Routes */}
+        <Route path="/admin-dashboard"   element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+        
+        {/* Public Routes */}
         <Route path="/mentors"           element={<Mentors />} />
-        <Route path="/roadmap"           element={<Roadmap />} />
-        <Route path="/:classLevel/roadmap" element={<Roadmap />} />
-        <Route path="/profile"           element={<Dashboard />} />
-        <Route path="/dashboard"         element={<Dashboard />} />
-        <Route path="/result/print"      element={<PrintReport />} />
-        <Route path="/:classLevel/result/print" element={<PrintReport />} />
-        <Route path="/mentor-dashboard"  element={<MentorDashboard />} />
         <Route path="/official-readiness" element={<OfficialReadiness />} />
-        <Route path="/scenarios"         element={<Scenarios />} />
         <Route path="/qa"                element={<QABoard />} />
         <Route path="/chat"              element={<Chatbot />} />
+
+        {/* New Public Routes */}
+        <Route path="/competitive-exams" element={<CompetitiveExams />} />
+        <Route path="/study-abroad"      element={<StudyAbroad />} />
+        <Route path="/career-pipeline"   element={<CareerPipeline />} />
+        <Route path="/scholarships"      element={<Scholarships />} />
+        <Route path="/college/:id"        element={<CollegeOverview />} />
+        <Route path="/mentor-apply"       element={<MentorApplication />} />
       </Routes>
     </div>
   )
 }
 
 function App() {
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(prev => !prev)
+      }
+      if (e.key === 'Escape') setSearchOpen(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <AuthProvider>
       <BrowserRouter>
         <div className="min-h-screen bg-navy flex flex-col">
           <ScrollToTop />
-          <Navbar />
+          <Navbar onSearchOpen={() => setSearchOpen(true)} />
           <AnimatedRoutes />
           <Footer />
           <ChatFloatingButton />
+          <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
         </div>
       </BrowserRouter>
     </AuthProvider>

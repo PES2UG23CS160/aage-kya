@@ -43,6 +43,13 @@ const INITIAL_FORM = {
   parentExpectations: '',
   riskComfort: '',
   coachingAccess: null,
+  // Task 2 extensions
+  favoriteSubjects: '',
+  preferredState: '',
+  preferredCity: '',
+  budget: '',
+  careerGoals: '',
+  preferredModeOfAdmission: '',
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -63,11 +70,16 @@ function validate(step, form, classLevel = 'class12') {
     if (!form.incomeRange)              e.incomeRange      = 'Please select a range.'
     if (form.firstGenCollege === null)  e.firstGenCollege  = 'Please select Yes or No.'
     if (form.preferredCities.length === 0) e.preferredCities = 'Pick at least one option.'
+    if (!form.preferredState)           e.preferredState   = 'Please select your preferred state.'
+    if (!form.preferredCity.trim())     e.preferredCity    = 'Please enter your preferred city (or enter \'Any\').'
+    if (!form.budget)                   e.budget           = 'Please select your budget.'
   }
   if (step === 3) {
     if (classLevel === 'class10') {
       if (!form.stream)             e.stream = 'Please pick which stream you are leaning towards.'
       if (!form.interests.trim())   e.interests = 'Please fill this in — it really matters.'
+      if (!form.favoriteSubjects.trim()) e.favoriteSubjects = 'Please share your favorite subjects — this helps us understand you.'
+      if (!form.careerGoals.trim())      e.careerGoals      = 'Please share your career goals or dreams.'
       if (form.parentPressure === null) e.parentPressure = 'Please select Yes or No.'
       if (form.parentPressure === true && !form.parentExpectations.trim()) {
         e.parentExpectations = 'Please share what stream/career your parents expect.'
@@ -77,6 +89,7 @@ function validate(step, form, classLevel = 'class12') {
       if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
     } else {
       if (!form.interests.trim())   e.interests   = 'Please fill this in — it really matters.'
+      if (!form.preferredModeOfAdmission) e.preferredModeOfAdmission = 'Please select your preferred mode of admission.'
       if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
     }
   }
@@ -331,6 +344,47 @@ function Step2({ form, setForm, errors, classLevel = 'class12' }) {
         hint="First-gen students face different challenges — hostel, family pressure, feeling like an outsider. Knowing this helps us guide you better."
       />
 
+      <div className="grid sm:grid-cols-2 gap-5">
+        <SelectField
+          id="preferredState" label="Preferred State" required
+          placeholder="Select state"
+          value={form.preferredState}
+          onChange={(e) => setForm((f) => ({ ...f, preferredState: e.target.value }))}
+          options={['Any State', ...INDIAN_STATES]} error={errors.preferredState}
+          hint="Which state would you prefer to study in?"
+        />
+        <TextField
+          id="preferredCity" label="Preferred City / Town" required type="text"
+          placeholder="e.g. Bangalore (or 'Any')"
+          value={form.preferredCity}
+          onChange={(e) => setForm((f) => ({ ...f, preferredCity: e.target.value }))}
+          error={errors.preferredCity}
+          hint="Enter your target city or 'Any'."
+        />
+      </div>
+
+      <SelectField
+        id="budget"
+        label={classLevel === 'class10' ? 'Preferred Annual Budget for High School & Coaching' : 'Preferred Annual College Fee Budget'}
+        required
+        placeholder="Select budget limit"
+        value={form.budget}
+        onChange={(e) => setForm((f) => ({ ...f, budget: e.target.value }))}
+        options={classLevel === 'class10' ? [
+          { value: 'below_20k', label: 'Below ₹20,000 / year (Highly Affordable / Govt)' },
+          { value: '20k-60k', label: '₹20,000 – ₹60,000 / year (Moderate / Private School)' },
+          { value: '60k-1.5L', label: '₹60,000 – ₹1.5 Lakh / year (Private School + Tuition)' },
+          { value: 'above_1.5L', label: 'Above ₹1.5 Lakh / year (No budget constraint)' }
+        ] : [
+          { value: 'below_1L', label: 'Below ₹1 Lakh / year (Highly Subsidised / Govt)' },
+          { value: '1L-3L', label: '₹1 Lakh – ₹3 Lakh / year (Moderate / State colleges)' },
+          { value: '3L-6L', label: '₹3 Lakh – ₹6 Lakh / year (Premium / Private colleges)' },
+          { value: 'above_6L', label: 'Above ₹6 Lakh / year (No budget constraint)' }
+        ]}
+        error={errors.budget}
+        hint={classLevel === 'class10' ? 'Includes high school fees + local coaching/tuitions' : 'Includes tuition fees, hostel, and other academic expenses'}
+      />
+
       <div>
         <Label required>
           {classLevel === 'class10' ? 'Where are you open to going for high school or coaching?' : 'Where are you open to studying?'}
@@ -530,7 +584,7 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
       <div>
         <div className="flex flex-wrap justify-between items-center gap-2 mb-1.5">
           <Label required>
-            {classLevel === 'class10' ? 'What subjects or topics do you enjoy the most and why?' : 'What are you actually interested in?'}
+            {classLevel === 'class10' ? 'What are your core interests and hobbies?' : 'What are you actually interested in?'}
           </Label>
           <VoiceInputButton
             onTranscribe={handleTranscribe('interests')}
@@ -539,13 +593,13 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
         </div>
         <Hint>
           {classLevel === 'class10' 
-            ? 'Tell us about specific subjects (e.g., Science, History, Drawing), specific topics you liked, or hobbies you spend time on.'
+            ? 'Hobbies, extra-curriculars, things you like to read or do for fun — literally anything. No wrong answers.'
             : 'Hobbies, things you google at 2am, subjects you liked, stuff you do for fun — literally anything. There are no wrong answers here.'}
         </Hint>
         <textarea
           id="interests" rows={4}
           placeholder={classLevel === 'class10' 
-            ? "e.g. I really like biology and learning about human anatomy, but I also enjoy drawing and playing video games..."
+            ? "e.g. I love designing posters, reading history novels, and tinkering with computers in my spare time..."
             : "e.g. I love designing posters and spend hours on YouTube watching tech reviews. I also really like debating with people..."}
           value={form.interests} onChange={set('interests')}
           className={`${errors.interests ? invalid : normal} resize-none mt-2`}
@@ -557,6 +611,69 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
           </span>
         </div>
       </div>
+
+      {classLevel === 'class10' && (
+        <>
+          <div>
+            <Label required>What school subjects or topics do you enjoy the most and why?</Label>
+            <Hint>Specific school subjects (e.g. Mathematics, Science, English, Arts) and why you find them enjoyable.</Hint>
+            <textarea
+              id="favoriteSubjects" rows={3}
+              placeholder="e.g. I really enjoy Physics because of mechanics and experiments, and English because I like reading literature..."
+              value={form.favoriteSubjects} onChange={(e) => setForm((f) => ({ ...f, favoriteSubjects: e.target.value.slice(0, MAX) }))}
+              className={`${errors.favoriteSubjects ? invalid : normal} resize-none mt-2`}
+            />
+            <div className="flex justify-between items-start mt-1">
+              <FieldError msg={errors.favoriteSubjects} />
+              <span className={`text-xs ml-auto flex-shrink-0 ${form.favoriteSubjects.length > 450 ? 'text-rose-400' : 'text-gray-600'}`}>
+                {form.favoriteSubjects.length}/{MAX}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <Label required>What are your long-term career goals or dreams?</Label>
+            <Hint>Where do you see yourself in 10 years? Talk about jobs, industries, or areas you want to impact.</Hint>
+            <textarea
+              id="careerGoals" rows={3}
+              placeholder="e.g. I want to build a startup in clean energy or work as an aerospace engineer at a space agency..."
+              value={form.careerGoals} onChange={(e) => setForm((f) => ({ ...f, careerGoals: e.target.value.slice(0, MAX) }))}
+              className={`${errors.careerGoals ? invalid : normal} resize-none mt-2`}
+            />
+            <div className="flex justify-between items-start mt-1">
+              <FieldError msg={errors.careerGoals} />
+              <span className={`text-xs ml-auto flex-shrink-0 ${form.careerGoals.length > 450 ? 'text-rose-400' : 'text-gray-600'}`}>
+                {form.careerGoals.length}/{MAX}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {classLevel === 'class12' && (
+        <SelectField
+          id="preferredModeOfAdmission"
+          label="Preferred Mode of Admission / Target Entrance Exam"
+          required
+          placeholder="Select admission mode / exam"
+          value={form.preferredModeOfAdmission}
+          onChange={(e) => setForm((f) => ({ ...f, preferredModeOfAdmission: e.target.value }))}
+          options={[
+            { value: 'JEE Advanced', label: 'JEE Advanced (for IITs)' },
+            { value: 'JEE Main', label: 'JEE Main (for NITs, IIITs, etc.)' },
+            { value: 'NEET', label: 'NEET (for MBBS/BDS/Medical)' },
+            { value: 'KCET', label: 'KCET (Karnataka State Quota)' },
+            { value: 'COMEDK', label: 'COMEDK (Karnataka Private Colleges)' },
+            { value: 'CUET', label: 'CUET (Central Universities)' },
+            { value: 'State CET', label: 'State CET (Other State Level Quotas)' },
+            { value: 'Management Quota', label: 'Management Quota (Direct Admission)' },
+            { value: 'Diploma Lateral Entry', label: 'Diploma Lateral Entry (to Engineering)' },
+            { value: 'Other', label: 'Other / Direct Merit Admissions' }
+          ]}
+          error={errors.preferredModeOfAdmission}
+          hint="This determines which colleges you can get into and directly filters target institutions."
+        />
+      )}
 
       {classLevel === 'class10' && (
         <>

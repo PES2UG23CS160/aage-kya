@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import MentorChat from '../components/MentorChat'
 import AuthModal from '../components/AuthModal'
 import { useAuth } from '../context/AuthContext'
 import { getMentors, postMentorApply } from '../api'
+import { StarDisplay } from '../components/RatingStars'
 
 // ─── Fallback data ─────────────────────────────────────────────────────────────
 
@@ -167,6 +169,19 @@ function MentorCard({ mentor, index, isBestMatch, onChat }) {
             </span>
           ))}
         </div>
+
+        {/* Rating display */}
+        {mentor.avg_rating != null ? (
+          <div className="flex items-center gap-2">
+            <StarDisplay rating={mentor.avg_rating} size="sm" />
+            <span className="text-gray-500 text-xs">({mentor.review_count || 0} reviews)</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            {[1,2,3,4,5].map(s => <svg key={s} className="w-3.5 h-3.5" viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" fill="#374151" /></svg>)}
+            <span className="text-gray-600 text-xs ml-1">No reviews yet</span>
+          </div>
+        )}
 
         <div className="h-px bg-white/6" />
 
@@ -424,12 +439,9 @@ export default function Mentors() {
         {/* Volunteer CTA */}
         <div className="text-center">
           <p className="text-gray-500 text-sm mb-3">Were you in their position once? Help the next student.</p>
-          <button
-            onClick={() => { setIsSubmitted(false); setErrors({}); setVolunteerForm({ name: '', email: '', college: '', degree: '', stream: '', story: '' }); setIsModalOpen(true) }}
-            className="btn-outline text-sm px-8 py-3"
-          >
-            Volunteer as a Mentor →
-          </button>
+          <Link to="/mentor-apply" className="btn-primary text-sm px-8 py-3 inline-flex items-center gap-2">
+            🌟 Become a Mentor →
+          </Link>
         </div>
       </div>
 

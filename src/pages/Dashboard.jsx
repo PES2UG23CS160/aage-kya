@@ -115,7 +115,7 @@ export default function Dashboard() {
       await refreshProfile()
       localStorage.removeItem('aageKyaFormData')
       // Navigate to onboarding
-      const nextOnboard = profile?.class_level === 'class10' ? '/class10/onboarding' : '/class12/onboarding'
+      const nextOnboard = profile?.role === 'other' ? '/onboarding' : profile?.class_level === 'class10' ? '/class10/onboarding' : '/class12/onboarding'
       navigate(nextOnboard)
     } catch (err) {
       console.error('Error re-onboarding:', err)
@@ -384,7 +384,7 @@ export default function Dashboard() {
                     {profile?.full_name || 'My Dashboard'}
                   </h1>
                   <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-300 self-center sm:self-auto">
-                    🎓 Student ({profile?.class_level === 'class10' ? 'Class 10' : 'Class 12'})
+                    🎓 {profile?.role === 'other' ? 'General Learner' : `Student (${profile?.class_level === 'class10' ? 'Class 10' : 'Class 12'})`}
                   </span>
                 </div>
                 <p className="text-gray-400 text-sm">{user.email}</p>
@@ -421,7 +421,7 @@ export default function Dashboard() {
                 <span>Re-run Guidance</span>
               </button>
               <Link
-                to={profile?.class_level === 'class10' ? '/class10/result' : '/class12/result'}
+                to={profile?.role === 'other' ? '/result' : profile?.class_level === 'class10' ? '/class10/result' : '/class12/result'}
                 className="flex-1 md:flex-none btn-primary text-xs py-3 px-6 text-center shadow-lg shadow-saffron/15 font-semibold text-white bg-saffron hover:bg-saffron-light active:scale-95 transition-all flex items-center justify-center gap-1.5"
               >
                 <span>🧭</span>
@@ -430,6 +430,38 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── Role-Based Quick Access Tiles ── */}
+        {(() => {
+          const isClass10 = profile?.class_level === 'class10'
+          const tiles = isClass10 ? [
+            { icon: '🗺️', label: 'Career Pipeline', desc: 'Explore career paths & roadmaps', to: '/career-pipeline', color: 'from-blue-500/15 to-indigo-500/5 border-blue-500/20' },
+            { icon: '📚', label: 'Stream Guide', desc: 'Science, Commerce or Arts?', to: '/career-pipeline', color: 'from-emerald-500/15 to-teal-500/5 border-emerald-500/20' },
+            { icon: '💰', label: 'Scholarships', desc: 'After 10th scholarships', to: '/scholarships', color: 'from-amber-500/15 to-yellow-500/5 border-amber-500/20' },
+            { icon: '✈️', label: 'Study Abroad', desc: 'Gap year & intl schools', to: '/study-abroad', color: 'from-purple-500/15 to-violet-500/5 border-purple-500/20' },
+            { icon: '🌟', label: 'Find a Mentor', desc: 'Talk to someone who made it', to: '/mentors', color: 'from-rose-500/15 to-pink-500/5 border-rose-500/20' },
+            { icon: '💬', label: 'AI Chatbot', desc: 'Ask anything, get guidance', to: '/chat', color: 'from-saffron/15 to-orange-500/5 border-saffron/20' },
+          ] : [
+            { icon: '🎯', label: 'Competitive Exams', desc: 'KCET · JEE · NEET · COMEDK', to: '/competitive-exams', color: 'from-blue-500/15 to-indigo-500/5 border-blue-500/20' },
+            { icon: '🗺️', label: 'Career Pipeline', desc: 'Full career roadmaps', to: '/career-pipeline', color: 'from-emerald-500/15 to-teal-500/5 border-emerald-500/20' },
+            { icon: '💰', label: 'Scholarships', desc: 'Fund your education', to: '/scholarships', color: 'from-amber-500/15 to-yellow-500/5 border-amber-500/20' },
+            { icon: '✈️', label: 'Study Abroad', desc: 'USA · UK · Germany · Canada', to: '/study-abroad', color: 'from-purple-500/15 to-violet-500/5 border-purple-500/20' },
+            { icon: '🌟', label: 'Find a Mentor', desc: 'Industry professionals', to: '/mentors', color: 'from-rose-500/15 to-pink-500/5 border-rose-500/20' },
+            { icon: '💬', label: 'AI Chatbot', desc: 'Personalized guidance', to: '/chat', color: 'from-saffron/15 to-orange-500/5 border-saffron/20' },
+          ]
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+              {tiles.map(tile => (
+                <Link key={tile.to + tile.label} to={tile.to}
+                  className={`bg-gradient-to-br ${tile.color} border rounded-2xl p-4 hover:scale-[1.02] hover:shadow-lg transition-all duration-200 group`}>
+                  <div className="text-2xl mb-2">{tile.icon}</div>
+                  <p className="text-white font-semibold text-sm leading-tight">{tile.label}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 group-hover:text-gray-400 transition-colors">{tile.desc}</p>
+                </Link>
+              ))}
+            </div>
+          )
+        })()}
 
         {/* ── Dynamic Tab Selector ── */}
         <div className="flex border-b border-white/10 mb-8 overflow-x-auto overflow-y-hidden pb-px gap-2">
