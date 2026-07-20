@@ -116,19 +116,20 @@ export function AuthProvider({ children }) {
     setProfile(null)
   }
 
-  function loginAsDemo(role) {
+  function loginAsDemo(role, customEmail) {
+    const emailVal = customEmail || (role === 'admin' ? 'demo-admin@aagekya.com' : 'demo-student@aagekya.com')
     const demoSession = {
       access_token: role === 'admin' ? 'demo-admin-token' : 'demo-student-token',
       user: {
         id: role === 'admin' ? '00000000-0000-0000-0000-000000000002' : '00000000-0000-0000-0000-000000000001',
-        email: role === 'admin' ? 'demo-admin@aagekya.com' : 'demo-student@aagekya.com',
+        email: emailVal,
         user_metadata: { user_type: role }
       }
     }
     const demoProfile = {
       id: demoSession.user.id,
       role: role,
-      full_name: role === 'admin' ? 'Demo Admin' : 'Demo Student',
+      full_name: role === 'admin' ? 'Demo Admin' : (emailVal.split('@')[0] || 'Demo Student'),
       class_level: 'class12',
     }
     setSession(demoSession)

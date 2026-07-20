@@ -25,7 +25,7 @@ export default function AuthModal({ isOpen, onClose }) {
   if (!isOpen) return null
 
   const handleDemoLogin = (role) => {
-    loginAsDemo(role)
+    loginAsDemo(role, email)
     onClose()
     if (role === 'admin') {
       navigate('/admin-dashboard')
@@ -194,8 +194,17 @@ export default function AuthModal({ isOpen, onClose }) {
 
               {/* Error */}
               {errorMsg && (
-                <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3 text-rose-300 text-xs mb-4 leading-relaxed">
-                  ⚠️ {errorMsg}
+                <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3.5 text-rose-300 text-xs mb-4 leading-relaxed flex flex-col gap-2">
+                  <span>⚠️ {errorMsg}</span>
+                  {email.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => handleDemoLogin(userType)}
+                      className="mt-1 text-left text-saffron hover:underline font-bold"
+                    >
+                      ⚡ Bypass rate limit &amp; sign in instantly as {userType === 'admin' ? 'Admin' : 'Student'} using &quot;{email}&quot; →
+                    </button>
+                  )}
                 </div>
               )}
 
