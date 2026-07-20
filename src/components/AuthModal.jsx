@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../context/AuthContext'
 
 const TABS = [
   { id: 'password', label: 'Email & Password' },
@@ -9,12 +10,13 @@ const TABS = [
 
 export default function AuthModal({ isOpen, onClose }) {
   const navigate = useNavigate()
+  const { loginAsDemo } = useAuth()
   const [tab, setTab]           = useState('password')   // 'password' | 'magic'
   const [mode, setMode]         = useState('signin')     // 'signin' | 'signup'
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
-  const [userType, setUserType] = useState('class12')   // class10 | class12 | other | admin
+  const [userType, setUserType] = useState('student')   // student | admin
   const [loading, setLoading]   = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [success, setSuccess]   = useState(false)
@@ -22,8 +24,18 @@ export default function AuthModal({ isOpen, onClose }) {
 
   if (!isOpen) return null
 
+  const handleDemoLogin = (role) => {
+    loginAsDemo(role)
+    onClose()
+    if (role === 'admin') {
+      navigate('/admin-dashboard')
+    } else {
+      navigate('/dashboard')
+    }
+  }
+
   const reset = () => {
-    setEmail(''); setPassword(''); setConfirm(''); setUserType('class12')
+    setEmail(''); setPassword(''); setConfirm(''); setUserType('student')
     setErrorMsg(''); setSuccess(false); setSuccessMsg('')
     setLoading(false)
   }
@@ -203,9 +215,7 @@ export default function AuthModal({ isOpen, onClose }) {
                     <label className="block text-xs font-semibold text-gray-300 mb-1.5">User Type</label>
                     <div className="grid grid-cols-2 gap-2 mt-1">
                       {[
-                        { id: 'class10', label: '10th Student', icon: '🎒' },
-                        { id: 'class12', label: '12th Student', icon: '🎓' },
-                        { id: 'other', label: 'Other', icon: '👤' },
+                        { id: 'student', label: 'Student / User', icon: '🎓' },
                         { id: 'admin', label: 'Admin', icon: '🔑' },
                       ].map(t => (
                         <button
@@ -271,9 +281,7 @@ export default function AuthModal({ isOpen, onClose }) {
                       <label className="block text-xs font-semibold text-gray-300 mb-1.5">User Type</label>
                       <div className="grid grid-cols-2 gap-2 mt-1">
                         {[
-                          { id: 'class10', label: '10th Student', icon: '🎒' },
-                          { id: 'class12', label: '12th Student', icon: '🎓' },
-                          { id: 'other', label: 'Other', icon: '👤' },
+                          { id: 'student', label: 'Student / User', icon: '🎓' },
                           { id: 'admin', label: 'Admin', icon: '🔑' },
                         ].map(t => (
                           <button
@@ -320,6 +328,28 @@ export default function AuthModal({ isOpen, onClose }) {
                   </p>
                 </form>
               )}
+
+              {/* Demo Login Options */}
+              <div className="relative my-5 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
+                <span className="relative z-10 px-3 bg-[#111827] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Demo Sandbox Bypass</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('student')}
+                  className="py-2.5 rounded-xl border border-white/10 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold transition-all duration-200"
+                >
+                  ⚡ Student Demo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('admin')}
+                  className="py-2.5 rounded-xl border border-white/10 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-semibold transition-all duration-200"
+                >
+                  ⚡ Admin Demo
+                </button>
+              </div>
             </>
           )}
         </div>

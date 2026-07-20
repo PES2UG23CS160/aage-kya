@@ -10,6 +10,21 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null) // students row
 
   useEffect(() => {
+    // Check if there is a stored demo session first
+    const storedDemo = localStorage.getItem('aageKyaDemoSession')
+    if (storedDemo) {
+      try {
+        const { demoSession, demoProfile } = JSON.parse(storedDemo)
+        setSession(demoSession)
+        setUser(demoSession.user)
+        setProfile(demoProfile)
+        setLoading(false)
+        return
+      } catch (err) {
+        console.error('Failed to parse demo session', err)
+      }
+    }
+
     // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -21,6 +36,8 @@ export function AuthProvider({ children }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        if (localStorage.getItem('aageKyaDemoSession')) return
+
         setSession(session)
         setUser(session?.user ?? null)
         if (session?.user) {
@@ -90,17 +107,44 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     await supabase.auth.signOut()
+    localStorage.removeItem('aageKyaDemoSession')
     localStorage.removeItem('aageKyaRoadmap')
     localStorage.removeItem('aageKyaResult')
     localStorage.removeItem('aageKyaFormData')
+    setSession(null)
+    setUser(null)
+    setProfile(null)
+  }
+
+  function loginAsDemo(role) {
+    const demoSession = {
+      access_token: role === 'admin' ? 'demo-admin-token' : 'demo-student-token',
+      user: {
+        id: role === 'admin' ? '00000000-0000-0000-0000-000000000002' : '00000000-0000-0000-0000-000000000001',
+        email: role === 'admin' ? 'demo-admin@aagekya.com' : 'demo-student@aagekya.com',
+        user_metadata: { user_type: role }
+      }
+    }
+    const demoProfile = {
+      id: demoSession.user.id,
+      role: role,
+      full_name: role === 'admin' ? 'Demo Admin' : 'Demo Student',
+      class_level: 'class12',
+    }
+    setSession(demoSession)
+    setUser(demoSession.user)
+    setProfile(demoProfile)
+    localStorage.setItem('aageKyaDemoSession', JSON.stringify({ demoSession, demoProfile }))
   }
 
   async function refreshProfile() {
-    if (user) await fetchProfile(user.id)
+    if (user && !localStorage.getItem('aageKyaDemoSession')) {
+      await fetchProfile(user.id)
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, profile, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, session, loading, profile, signOut, refreshProfile, loginAsDemo }}>
       {children}
     </AuthContext.Provider>
   )

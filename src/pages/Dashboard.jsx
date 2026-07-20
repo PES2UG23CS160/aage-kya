@@ -433,30 +433,30 @@ export default function Dashboard() {
 
         {/* ── Role-Based Quick Access Tiles ── */}
         {(() => {
-          const isClass10 = profile?.class_level === 'class10'
-          const tiles = isClass10 ? [
-            { icon: '🗺️', label: 'Career Pipeline', desc: 'Explore career paths & roadmaps', to: '/career-pipeline', color: 'from-blue-500/15 to-indigo-500/5 border-blue-500/20' },
-            { icon: '📚', label: 'Stream Guide', desc: 'Science, Commerce or Arts?', to: '/career-pipeline', color: 'from-emerald-500/15 to-teal-500/5 border-emerald-500/20' },
-            { icon: '💰', label: 'Scholarships', desc: 'After 10th scholarships', to: '/scholarships', color: 'from-amber-500/15 to-yellow-500/5 border-amber-500/20' },
-            { icon: '✈️', label: 'Study Abroad', desc: 'Gap year & intl schools', to: '/study-abroad', color: 'from-purple-500/15 to-violet-500/5 border-purple-500/20' },
-            { icon: '🌟', label: 'Find a Mentor', desc: 'Talk to someone who made it', to: '/mentors', color: 'from-rose-500/15 to-pink-500/5 border-rose-500/20' },
-            { icon: '💬', label: 'AI Chatbot', desc: 'Ask anything, get guidance', to: '/chat', color: 'from-saffron/15 to-orange-500/5 border-saffron/20' },
-          ] : [
-            { icon: '🎯', label: 'Competitive Exams', desc: 'KCET · JEE · NEET · COMEDK', to: '/competitive-exams', color: 'from-blue-500/15 to-indigo-500/5 border-blue-500/20' },
-            { icon: '🗺️', label: 'Career Pipeline', desc: 'Full career roadmaps', to: '/career-pipeline', color: 'from-emerald-500/15 to-teal-500/5 border-emerald-500/20' },
-            { icon: '💰', label: 'Scholarships', desc: 'Fund your education', to: '/scholarships', color: 'from-amber-500/15 to-yellow-500/5 border-amber-500/20' },
-            { icon: '✈️', label: 'Study Abroad', desc: 'USA · UK · Germany · Canada', to: '/study-abroad', color: 'from-purple-500/15 to-violet-500/5 border-purple-500/20' },
-            { icon: '🌟', label: 'Find a Mentor', desc: 'Industry professionals', to: '/mentors', color: 'from-rose-500/15 to-pink-500/5 border-rose-500/20' },
-            { icon: '💬', label: 'AI Chatbot', desc: 'Personalized guidance', to: '/chat', color: 'from-saffron/15 to-orange-500/5 border-saffron/20' },
+          const tiles = [
+            { icon: '🎒', label: 'Post 10th Options', desc: 'Streams, courses & roadmaps after class 10', to: '/career-pipeline?class=10', color: 'from-blue-500/15 to-indigo-500/5 border-blue-500/20' },
+            { icon: '🎓', label: 'Post 12th Options', desc: 'Degrees, admissions & pathways after class 12', to: '/career-pipeline?class=12', color: 'from-emerald-500/15 to-teal-500/5 border-emerald-500/20' },
+            { icon: '📝', label: 'Profile Builder', desc: 'Fill/update your details for AI guidance', to: '/onboarding', color: 'from-saffron/15 to-orange-500/5 border-saffron/20' },
+            { icon: '✈️', label: 'Study Abroad', desc: 'Universities, countries, exams & visas', to: '/study-abroad', color: 'from-purple-500/15 to-violet-500/5 border-purple-500/20' },
+            { icon: '💰', label: 'Scholarships', desc: 'Find relevant financial aid opportunities', to: '/scholarships', color: 'from-amber-500/15 to-yellow-500/5 border-amber-500/20' },
+            { icon: '🌟', label: 'Mentors', desc: 'Book a free call with verified seniors', to: '/mentors', color: 'from-rose-500/15 to-pink-500/5 border-rose-500/20' },
+            { icon: '🎯', label: 'Competitive Exams', desc: 'KCET, JEE, NEET, CUET & more', to: '/competitive-exams', color: 'from-cyan-500/15 to-blue-500/5 border-cyan-500/20' },
+            { icon: '💬', label: 'AI Chatbot', desc: 'Ask the Career Engine anything 24/7', to: '/chat', color: 'from-teal-500/15 to-emerald-500/5 border-teal-500/20' },
+            { icon: '🗣️', label: 'Community Q&A', desc: 'Ask questions and view senior answers', to: '/qa', color: 'from-pink-500/15 to-rose-500/5 border-pink-500/20' },
           ]
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
               {tiles.map(tile => (
                 <Link key={tile.to + tile.label} to={tile.to}
-                  className={`bg-gradient-to-br ${tile.color} border rounded-2xl p-4 hover:scale-[1.02] hover:shadow-lg transition-all duration-200 group`}>
-                  <div className="text-2xl mb-2">{tile.icon}</div>
-                  <p className="text-white font-semibold text-sm leading-tight">{tile.label}</p>
-                  <p className="text-gray-500 text-xs mt-0.5 group-hover:text-gray-400 transition-colors">{tile.desc}</p>
+                  className={`bg-gradient-to-br ${tile.color} border rounded-2xl p-5 hover:scale-[1.02] hover:shadow-lg transition-all duration-200 group flex flex-col justify-between`}>
+                  <div>
+                    <div className="text-3xl mb-3">{tile.icon}</div>
+                    <p className="text-white font-bold text-sm leading-tight">{tile.label}</p>
+                    <p className="text-gray-400 text-xs mt-1.5 leading-relaxed group-hover:text-gray-300 transition-colors">{tile.desc}</p>
+                  </div>
+                  <div className="mt-4 flex items-center justify-end">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-saffron opacity-0 group-hover:opacity-100 transition-opacity">Explore →</span>
+                  </div>
                 </Link>
               ))}
             </div>

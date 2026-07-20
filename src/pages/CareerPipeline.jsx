@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import YouTubePanel from '../components/YouTubePanel'
+import { COURSES_DATA } from '../data/coursesData'
 
 const CAREER_PATHS = [
   {
@@ -228,15 +229,144 @@ function StageDetail({ stage, pathId }) {
   )
 }
 
+function CourseCard({ course }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="glass-card hover:border-saffron/30 transition-all duration-300 p-5 overflow-hidden">
+      <div 
+        className="flex items-start justify-between cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex gap-4">
+          <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl flex-shrink-0">
+            {course.icon}
+          </div>
+          <div className="text-left">
+            <span className="text-[10px] uppercase font-bold tracking-widest text-saffron bg-saffron/10 px-2.5 py-1 rounded-full">{course.category}</span>
+            <h3 className="font-display font-bold text-white text-lg mt-2">{course.title}</h3>
+            <div className="flex flex-wrap gap-4 text-xs text-gray-400 mt-1">
+              <div>⏱️ <span className="font-medium text-gray-300">{course.duration}</span></div>
+              <div>🎓 Eligibility: <span className="font-medium text-gray-300">{course.eligibility}</span></div>
+            </div>
+          </div>
+        </div>
+        <button className="text-gray-400 hover:text-white p-1">
+          <span className={`inline-block transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="mt-5 pt-5 border-t border-white/5 space-y-4 text-left overflow-hidden"
+          >
+            <div>
+              <h4 className="text-xs uppercase font-bold tracking-widest text-saffron mb-1.5">Description</h4>
+              <p className="text-gray-300 text-sm leading-relaxed">{course.description}</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-emerald-400 mb-1.5">📚 Key Subjects</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.subjects}</p>
+              </div>
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-cyan-400 mb-1.5">🛠️ Required Skills</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.requiredSkills}</p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-amber-400 mb-1.5">📝 Entrance Exams</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.entranceExams}</p>
+              </div>
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-purple-400 mb-1.5">📈 Future Scope</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.futureScope}</p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-rose-400 mb-1.5">💰 Starting Salary</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.salary}</p>
+              </div>
+              <div className="bg-white/2 border border-white/5 p-4 rounded-xl">
+                <h4 className="text-xs uppercase font-bold tracking-widest text-indigo-400 mb-1.5">🎓 Higher Studies</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">{course.higherStudies}</p>
+              </div>
+            </div>
+
+            <div className="bg-saffron/5 border border-saffron/10 p-4 rounded-xl">
+              <h4 className="text-xs uppercase font-bold tracking-widest text-saffron mb-1">💡 Important Information</h4>
+              <p className="text-gray-300 text-xs leading-relaxed">{course.importantInfo}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export default function CareerPipeline() {
+  const [searchParams] = useSearchParams()
+  const classParam = searchParams.get('class')
+
+  const [activeTab, setActiveTab] = useState(classParam ? 'catalog' : 'roadmaps') // roadmaps | catalog
   const [selectedPath, setSelectedPath] = useState(null)
   const [activeStageIdx, setActiveStageIdx] = useState(0)
+
+  // Catalog state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('ALL')
 
   const path = CAREER_PATHS.find(p => p.id === selectedPath)
 
   const handlePathSwitch = useCallback((pathId) => {
     setSelectedPath(pathId)
     setActiveStageIdx(0)
+  }, [])
+
+  // Filter courses
+  const filteredCourses = useMemo(() => {
+    return COURSES_DATA.filter(course => {
+      const matchesSearch = 
+        course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        course.subjects.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        course.requiredSkills.toLowerCase().includes(searchQuery.toLowerCase())
+
+      let matchesCategory = true
+      if (selectedCategory !== 'ALL') {
+        matchesCategory = course.category.toLowerCase().includes(selectedCategory.toLowerCase())
+      }
+
+      // If user came specifically looking for class 10 options, filter relevant ones
+      if (classParam === '10' && selectedCategory === 'ALL') {
+        const lowerTitle = course.title.toLowerCase()
+        // Diploma, ITI, Polytechnic, 10th options are primary
+        if (lowerTitle.includes('b.tech') || lowerTitle.includes('mbbs') || lowerTitle.includes('pilot') || lowerTitle.includes('civil services')) {
+          return false
+        }
+      }
+
+      return matchesSearch && matchesCategory
+    })
+  }, [searchQuery, selectedCategory, classParam])
+
+  // Get unique categories for filters
+  const categories = useMemo(() => {
+    const cats = new Set(COURSES_DATA.map(c => {
+      // Split compound categories for simpler filter buttons
+      if (c.category.includes('&')) return c.category.split('&')[1].trim()
+      return c.category
+    }))
+    return ['ALL', ...Array.from(cats)]
   }, [])
 
   return (
@@ -246,88 +376,167 @@ export default function CareerPipeline() {
 
       <div className="max-w-6xl mx-auto relative z-10">
         {/* Hero */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
           <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-5 py-2 mb-6">
             <span className="text-lg">🗺️</span>
-            <span className="text-emerald-300 text-sm font-semibold">Interactive Career Pipeline</span>
+            <span className="text-emerald-300 text-sm font-semibold">
+              {classParam === '10' ? 'Post-10th Career & Stream Options' : classParam === '12' ? 'Post-12th Career & Degree Options' : 'Career Pipeline & Course Catalog'}
+            </span>
           </div>
           <h1 className="font-display text-4xl md:text-6xl font-black text-white mb-4">
-            Your Career <span className="gradient-text">Roadmap</span>
+            Explore Your <span className="gradient-text">Future Paths</span>
           </h1>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            Select a career path and explore every stage from where you are now to your ultimate goal.
-            Every node is clickable — switch paths anytime.
+            Review detailed guidelines on major Indian career streams and interactive job roadmaps from high school directly to ultimate corporate goals.
           </p>
         </motion.div>
 
-        {/* Career Path Selection */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-12">
-          {CAREER_PATHS.map((p, i) => (
-            <motion.button
-              key={p.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => handlePathSwitch(p.id)}
-              className={`p-5 rounded-2xl border text-left bg-gradient-to-br ${p.color} transition-all duration-300 ${
-                selectedPath === p.id ? 'ring-2 ring-saffron/50 border-saffron/30' : 'border-white/10'
-              }`}
-            >
-              <span className="text-3xl">{p.icon}</span>
-              <h3 className="font-display font-bold text-white text-sm mt-2">{p.title}</h3>
-            </motion.button>
-          ))}
+        {/* Tab switcher */}
+        <div className="flex justify-center bg-white/5 border border-white/10 rounded-xl p-1 mb-8 max-w-md mx-auto">
+          <button
+            onClick={() => setActiveTab('roadmaps')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              activeTab === 'roadmaps'
+                ? 'bg-saffron text-white shadow-md'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🧭 Interactive Roadmaps
+          </button>
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              activeTab === 'catalog'
+                ? 'bg-saffron text-white shadow-md'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            📖 Expandable Course Catalog
+          </button>
         </div>
 
-        {/* Pipeline */}
-        <AnimatePresence mode="wait">
-          {path && (
-            <motion.div
-              key={path.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="grid lg:grid-cols-[320px_1fr] gap-8"
-            >
-              {/* Timeline */}
-              <div className="glass-card p-6 rounded-2xl border border-white/10 self-start lg:sticky lg:top-24">
-                <h3 className="font-display font-bold text-white text-lg mb-6 flex items-center gap-2">
-                  <span>{path.icon}</span> {path.title}
-                </h3>
-                <div>
-                  {path.stages.map((stage, i) => (
-                    <StageNode
-                      key={stage.id}
-                      stage={stage}
-                      index={i}
-                      total={path.stages.length}
-                      isActive={i === activeStageIdx}
-                      isCompleted={i < activeStageIdx}
-                      onClick={() => setActiveStageIdx(i)}
-                    />
-                  ))}
-                </div>
+        {activeTab === 'roadmaps' ? (
+          <>
+            {/* Career Path Selection */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-12">
+              {CAREER_PATHS.map((p, i) => (
+                <motion.button
+                  key={p.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handlePathSwitch(p.id)}
+                  className={`p-5 rounded-2xl border text-left bg-gradient-to-br ${p.color} transition-all duration-300 ${
+                    selectedPath === p.id ? 'ring-2 ring-saffron/50 border-saffron/30' : 'border-white/10'
+                  }`}
+                >
+                  <span className="text-3xl">{p.icon}</span>
+                  <h3 className="font-display font-bold text-white text-sm mt-2">{p.title}</h3>
+                </motion.button>
+              ))}
+            </div>
+
+            {/* Pipeline */}
+            <AnimatePresence mode="wait">
+              {path && (
+                <motion.div
+                  key={path.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="grid lg:grid-cols-[320px_1fr] gap-8"
+                >
+                  {/* Timeline */}
+                  <div className="glass-card p-6 rounded-2xl border border-white/10 self-start lg:sticky lg:top-24">
+                    <h3 className="font-display font-bold text-white text-lg mb-6 flex items-center gap-2">
+                      <span>{path.icon}</span> {path.title}
+                    </h3>
+                    <div>
+                      {path.stages.map((stage, i) => (
+                        <StageNode
+                          key={stage.id}
+                          stage={stage}
+                          index={i}
+                          total={path.stages.length}
+                          isActive={i === activeStageIdx}
+                          isCompleted={i < activeStageIdx}
+                          onClick={() => setActiveStageIdx(i)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Stage Detail */}
+                  <AnimatePresence mode="wait">
+                    <StageDetail key={path.stages[activeStageIdx].id} stage={path.stages[activeStageIdx]} pathId={path.id} />
+                  </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Empty State */}
+            {!selectedPath && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-premium p-16 text-center">
+                <div className="text-6xl mb-4">🗺️</div>
+                <h3 className="font-display text-2xl font-bold text-white mb-2">Select a Career Path</h3>
+                <p className="text-gray-400 max-w-md mx-auto">
+                  Click on any career above to see your complete journey — from where you are now to your ultimate career goal.
+                </p>
+              </motion.div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-8">
+            {/* Search & Filters */}
+            <div className="glass-card p-6 border-white/10 space-y-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by course title, subjects, or skills (e.g. Coding, Law, B.Tech)..."
+                  className="w-full bg-[#111827]/80 border border-white/10 hover:border-white/20 focus:border-saffron/60 rounded-xl px-12 py-3.5 text-white placeholder-gray-500 text-sm transition-all outline-none focus:ring-2 focus:ring-saffron/30"
+                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg">🔍</span>
               </div>
 
-              {/* Stage Detail */}
-              <AnimatePresence mode="wait">
-                <StageDetail key={path.stages[activeStageIdx].id} stage={path.stages[activeStageIdx]} pathId={path.id} />
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              {/* Category pills */}
+              <div className="flex flex-wrap gap-2 pt-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                      (selectedCategory === cat || (cat !== 'ALL' && selectedCategory.toLowerCase().includes(cat.toLowerCase())))
+                        ? 'bg-saffron/15 border-saffron text-saffron'
+                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/25'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* Empty State */}
-        {!selectedPath && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-premium p-16 text-center">
-            <div className="text-6xl mb-4">🗺️</div>
-            <h3 className="font-display text-2xl font-bold text-white mb-2">Select a Career Path</h3>
-            <p className="text-gray-400 max-w-md mx-auto">
-              Click on any career above to see your complete journey — from where you are now to your ultimate career goal.
-            </p>
-          </motion.div>
+            {/* Courses grid */}
+            <div className="space-y-4">
+              {filteredCourses.length > 0 ? (
+                filteredCourses.map((course, idx) => (
+                  <CourseCard key={idx} course={course} />
+                ))
+              ) : (
+                <div className="glass-card-premium p-16 text-center">
+                  <div className="text-5xl mb-4">🤷‍♂️</div>
+                  <h3 className="font-display text-xl font-bold text-white mb-2">No Courses Found</h3>
+                  <p className="text-gray-400 max-w-sm mx-auto">
+                    We couldn't find any courses matching your search query. Try checking your spelling or clearing filters.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Bottom CTA */}

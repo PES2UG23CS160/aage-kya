@@ -3,6 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import Groq from 'groq-sdk'
 import { createClient } from '@supabase/supabase-js'
+import { runMultiAgentOrchestrator } from './agents/Orchestrator.js'
 
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -225,16 +226,35 @@ async function getAuthUser(authHeader) {
     return null
   }
   const token = authHeader.split(' ')[1]
+
+  // Developer/Demo bypass for local development or testing
+  if (token === 'demo-student-token') {
+    return {
+      id: '00000000-0000-0000-0000-000000000001',
+      email: 'demo-student@aagekya.com',
+      role: 'student',
+      user_metadata: { user_type: 'student' }
+    }
+  }
+  if (token === 'demo-admin-token') {
+    return {
+      id: '00000000-0000-0000-0000-000000000002',
+      email: 'demo-admin@aagekya.com',
+      role: 'admin',
+      user_metadata: { user_type: 'admin' }
+    }
+  }
+
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token)
     if (error || !user) return null
     // Attach role from students profile (defaults 'student' if row doesn't exist yet)
     try {
       const { data: profile } = await supabase
-        .from('students')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
+          .from('students')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle()
       user.role = profile?.role || 'student'
     } catch (_) {
       user.role = 'student'
@@ -1100,27 +1120,12 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       }
     }
 
-    // ── Phase 3: Fetch real data in parallel before calling Gemini ──────────
-    const [colleges, scholarships] = await Promise.all([
-      fetchCollegesForStudent(formData),
-      fetchScholarshipsForStudent(formData),
-    ])
-    const grounded = colleges.length > 0 || scholarships.length > 0
-    if (grounded) {
-      console.log(`RAG: found ${colleges.length} colleges, ${scholarships.length} scholarships for ${formData.stream}/${formData.state}`)
-    } else {
-      console.log('RAG: no DB data found, falling back to Gemini-only prompt')
-    }
-
-    // Build RAG-grounded prompt and call Gemini
-    const prompt = buildPrompt(formData, colleges, scholarships)
+    // ── Phase 3: Run the Multi-Agent Orchestrator ──────────────────────────
     const confidence = computeConfidence(formData)
-    const result = await callGemini(prompt, { studentId: user?.id || null, callType: 'guidance' })
+    console.log(`[Multi-Agent] Running state graph orchestrator for ${formData.fullName || 'student'}`)
+    const agentResult = await runMultiAgentOrchestrator(formData)
 
-    // Build helper maps so the frontend can render source links without
-    // relying on Gemini to hallucinate URLs.
-    const colleges_data = buildCollegesDataMap(colleges)
-    const matchedScholarship = matchScholarship(scholarships, result.scholarship_to_check)
+    const matchedScholarship = (agentResult.scholarships_list || []).find(s => s.name === agentResult.scholarship_to_check)
     const scholarship_data = matchedScholarship
       ? {
           name:             matchedScholarship.name,
@@ -1157,14 +1162,14 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       // Save results
       await client.from('guidance_results').insert({
         student_id: user.id,
-        summary: result.summary,
-        options: result.options,
-        scholarship_to_check: result.scholarship_to_check,
-        one_thing_to_do_this_week: result.one_thing_to_do_this_week,
+        summary: agentResult.summary,
+        options: agentResult.options,
+        scholarship_to_check: agentResult.scholarship_to_check,
+        one_thing_to_do_this_week: agentResult.one_thing_to_do_this_week,
         confidence_score: confidence.confidence_score,
         confidence_label: confidence.confidence_label,
         confidence_reason: confidence.confidence_reason,
-        scholarships_list: (scholarships || []).map(s => ({ name: s.name, application_url: s.application_url, deadline_pattern: s.deadline_pattern, description: s.description }))
+        scholarships_list: agentResult.scholarships_list
       })
       // Send guidance-ready email notification (fire-and-forget)
       sendEmail(
@@ -1174,19 +1179,10 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       )
     }
 
-    const scholarships_list = (scholarships || []).map(s => ({
-      name: s.name,
-      application_url: s.application_url,
-      deadline_pattern: s.deadline_pattern,
-      description: s.description,
-    }))
-
     res.json({
-      ...result,
-      grounded,
-      colleges_data,
+      ...agentResult,
+      grounded: true,
       scholarship_data,
-      scholarships_list,
       ...confidence,
     })
   } catch (err) {
