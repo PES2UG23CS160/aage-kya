@@ -2186,6 +2186,44 @@ app.get('/api/mentors', async (req, res) => {
   }
 })
 
+// Fetch reference scholarships list
+app.get('/api/scholarships', async (req, res) => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.json([])
+    }
+    const { data, error } = await supabase
+      .from('scholarships')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (error) throw error
+    res.json(data || [])
+  } catch (err) {
+    console.error('Scholarships API error:', err.message)
+    res.status(500).json({ error: 'DATABASE_ERROR', message: err.message })
+  }
+})
+
+// Fetch reference colleges list
+app.get('/api/colleges', async (req, res) => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.json([])
+    }
+    const { data, error } = await supabase
+      .from('colleges')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (error) throw error
+    res.json(data || [])
+  } catch (err) {
+    console.error('Colleges API error:', err.message)
+    res.status(500).json({ error: 'DATABASE_ERROR', message: err.message })
+  }
+})
+
 const validateApplyBody = (req, res, next) => {
   const { name, email, college, degree, stream, story } = req.body
   if (!name || !email || !college || !degree || !stream || !story) {

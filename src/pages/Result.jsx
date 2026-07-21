@@ -152,21 +152,35 @@ function ConfidenceBadge({ label, reason }) {
 }
 
 const AGENT_LABELS = {
-  student_profile_agent: 'Student profile',
-  competitive_examination_agent: 'Exam routes',
-  college_recommendation_agent: 'College ranking',
-  fee_analysis_agent: 'Fee analysis',
-  scholarship_agent: 'Scholarship matching',
-  career_guidance_agent: 'Career pathways',
-  verification_agent: 'Evidence verification',
+  // snake_case keys from mock trace
+  student_profile_agent: 'Student Profile',
+  competitive_examination_agent: 'Exam Routes',
+  college_recommendation_agent: 'College Ranking',
+  fee_analysis_agent: 'Fee Analysis',
+  scholarship_agent: 'Scholarship Matching',
+  career_guidance_agent: 'Career Pathways',
+  verification_agent: 'Evidence Verification',
   recommendation_explanation_agent: 'Explanation',
-  orchestrator_agent: 'Final orchestration',
+  orchestrator_agent: 'Final Orchestration',
+  // Human-readable keys from Orchestrator.js executionLogs
+  'Profile Analysis Agent': 'Student Profile',
+  'Search & Retrieval Agent': 'Search & Retrieval',
+  'Career Recommendation Agent': 'Career Pathways',
+  'College Recommendation Agent': 'College Ranking',
+  'Scholarship Agent': 'Scholarship Matching',
+  'Study Abroad Agent': 'Study Abroad',
+  'Career Roadmap Agent': 'Career Roadmap',
+  'Mentor Agent': 'Mentor Matching',
+  'YouTube Resource Agent': 'Learning Resources',
+  'Summary Agent': 'Final Summary',
 }
 
 function AgentTracePanel({ trace, decisionContext }) {
   if (!trace) return null
-  const completed = trace.steps.filter(step => step.status === 'completed').length
-  const totalDuration = Math.max(0, new Date(trace.completedAt).getTime() - new Date(trace.startedAt).getTime())
+  const completed = trace.steps.filter(step => step.status === 'completed' || step.status === 'success').length
+  const totalDuration = trace.startedAt && trace.completedAt
+    ? Math.max(0, new Date(trace.completedAt).getTime() - new Date(trace.startedAt).getTime())
+    : trace.steps.reduce((sum, step) => sum + (step.durationMs || 0), 0)
   const missing = decisionContext?.profileCompleteness?.missing || []
 
   return (
@@ -188,7 +202,7 @@ function AgentTracePanel({ trace, decisionContext }) {
             <div key={`${step.agent}-${index}`} className="rounded-xl border border-white/8 bg-navy-900/60 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${step.status === 'completed' ? 'bg-emerald-400' : step.status === 'failed' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                  <span className={`h-2 w-2 rounded-full ${(step.status === 'completed' || step.status === 'success') ? 'bg-emerald-400' : step.status === 'failed' ? 'bg-red-400' : 'bg-amber-400'}`} />
                   <p className="text-gray-200 text-sm font-semibold">{AGENT_LABELS[step.agent] || step.agent}</p>
                 </div>
                 <span className="text-gray-600 text-[11px] whitespace-nowrap">{step.durationMs} ms</span>
@@ -202,8 +216,10 @@ function AgentTracePanel({ trace, decisionContext }) {
         </div>
         <div className="rounded-xl border border-white/8 bg-navy-900/60 p-4 text-xs text-gray-400">
           <p>
-            Evidence coverage: {trace.evidenceCoverage.colleges} colleges, {trace.evidenceCoverage.scholarships} scholarships,
-            {' '}{trace.evidenceCoverage.feeSchedules} component fee schedules, {trace.evidenceCoverage.officialSources} official sources.
+            {typeof trace.evidenceCoverage === 'object' && trace.evidenceCoverage !== null
+              ? `Evidence coverage: ${trace.evidenceCoverage.colleges} colleges, ${trace.evidenceCoverage.scholarships} scholarships, ${trace.evidenceCoverage.feeSchedules} component fee schedules, ${trace.evidenceCoverage.officialSources} official sources.`
+              : `Evidence coverage: ${Math.round((trace.evidenceCoverage ?? 0) * 100)}% grounded`
+            }
           </p>
           {missing.length > 0 && (
             <p className="mt-2 text-amber-300">

@@ -41,6 +41,14 @@ export async function getMentors() {
   return apiFetch('/api/mentors')
 }
 
+export async function getScholarships() {
+  return apiFetch('/api/scholarships')
+}
+
+export async function getColleges() {
+  return apiFetch('/api/colleges')
+}
+
 export async function getVerifiedFeePlans() {
   return apiFetch('/api/fees/pilot')
 }
