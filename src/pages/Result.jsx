@@ -789,6 +789,81 @@ export default function Result() {
               )}
             </div>
 
+            {/* AI Explainability Agent Trace */}
+            {result.explainability && (
+              <div className="glass-card p-5 border-saffron/20 bg-saffron/5 rounded-2xl">
+                <details className="group">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🤖</span>
+                      <div className="text-left">
+                        <h4 className="font-display font-bold text-sm text-white group-hover:text-saffron transition-colors">
+                          AI Orchestrator Agent Trace & Explainability
+                        </h4>
+                        <p className="text-gray-400 text-xs mt-0.5">
+                          Click to view step-by-step latency & agent thought process details
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-gray-400 group-open:rotate-180 transition-transform duration-200">
+                      ▼
+                    </span>
+                  </summary>
+                  <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                    {/* Summary of execution */}
+                    <div className="flex items-center justify-between text-xs text-gray-400 bg-white/5 p-3 rounded-xl border border-white/5">
+                      <span>Total Orchestration Latency:</span>
+                      <span className="font-mono text-saffron font-bold">
+                        {result.explainability.totalDurationMs} ms
+                      </span>
+                    </div>
+
+                    {/* Profile metrics extracted */}
+                    {result.explainability.profile && (
+                      <div className="bg-navy-800/80 border border-white/5 rounded-xl p-3.5 space-y-2 text-left">
+                        <h5 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                          <span>📋</span> Profile Agent Extraction:
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                          <div>Academic Standing: <span className="text-white">{result.explainability.profile.academicStanding}</span></div>
+                          <div>Financial Category: <span className="text-white">{result.explainability.profile.financialCategory}</span></div>
+                          <div>Risk Appetite: <span className="text-white">{result.explainability.profile.riskAppetite}</span></div>
+                          <div>Coaching Needs: <span className="text-white">{result.explainability.profile.coachingNeeds}</span></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step log list */}
+                    <div className="space-y-2 text-left">
+                      <h5 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                        <span>⛓️</span> Executed Nodes:
+                      </h5>
+                      <div className="space-y-1.5">
+                        {(result.explainability.steps || []).map((step, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs p-2.5 rounded-lg border border-white/5 bg-white/2 hover:bg-white/5 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <span className={step.status === 'success' ? 'text-emerald-400' : 'text-rose-400'}>
+                                {step.status === 'success' ? '●' : '✕'}
+                              </span>
+                              <span className="font-medium text-gray-300">{step.agent}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 font-mono">{step.durationMs} ms</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                step.status === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                              }`}>
+                                {step.status.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            )}
+
             {/* 1 — Summary */}
             <SummaryCard
               summary={result.summary}

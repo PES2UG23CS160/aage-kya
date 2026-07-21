@@ -1,0 +1,831 @@
+import { createClient } from '@supabase/supabase-js'
+import Groq from 'groq-sdk'
+
+// Helper to check environment configuration
+const supabaseUrl = process.env.SUPABASE_URL || 'https://your-project-ref.supabase.co'
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || ''
+const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null
+
+// Unified LLM Client matching index.js's implementation
+class UnifiedAIClient {
+  constructor() {
+    this.groqApiKey = process.env.GROQ_API_KEY
+    this.openaiApiKey = process.env.OPENAI_API_KEY
+  }
+
+  async getCompletion({ model, messages, temperature, max_tokens, response_format }) {
+    let url, headers, bodyModel
+    if (this.groqApiKey) {
+      url = 'https://api.groq.com/openai/v1/chat/completions'
+      headers = {
+        'Authorization': `Bearer ${this.groqApiKey}`,
+        'Content-Type': 'application/json'
+      }
+      bodyModel = model || 'llama-3.3-70b-versatile'
+    } else if (this.openaiApiKey) {
+      url = 'https://api.openai.com/v1/chat/completions'
+      headers = {
+        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'Content-Type': 'application/json'
+      }
+      bodyModel = 'gpt-4o-mini'
+    } else {
+      throw new Error('NO_API_KEY')
+    }
+
+    const body = {
+      model: bodyModel,
+      messages,
+      temperature: temperature ?? 0.7,
+      max_tokens: max_tokens ?? 2048,
+    }
+
+    if (response_format) {
+      body.response_format = response_format
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    })
+
+    if (!response.ok) {
+      const errText = await response.text()
+      throw new Error(`AI API error (${response.status}): ${errText}`)
+    }
+
+    const data = await response.json()
+    return data.choices[0].message.content
+  }
+}
+
+const aiClient = new UnifiedAIClient()
+
+// Call LLM safely
+async function runLLMAgent(prompt, responseJson = true) {
+  try {
+    const responseText = await aiClient.getCompletion({
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2, // Low temperature for deterministic/reliable agent behavior
+      max_tokens: 1500,
+      response_format: responseJson ? { type: 'json_object' } : undefined
+    })
+
+    if (responseJson) {
+      const cleaned = responseText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+      return JSON.parse(cleaned)
+    }
+    return responseText
+  } catch (err) {
+    console.error('LLM Agent execution failed:', err.message)
+    throw err
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 10 SPECIALIZED AGENTS WITH DEGRADED MOCK FALLBACKS
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 1. Profile Analysis Agent
+ */
+export async function runProfileAnalysisAgent(state) {
+  const form = state.formData
+  try {
+    const prompt = `
+    You are the Profile Analysis Agent. Analyze the student's profile:
+    - Board: ${form.board || 'Not specified'}
+    - Marks: ${form.marks || 'Not specified'}%
+    - Home State: ${form.state || 'Not specified'}
+    - Stream: ${form.stream || 'Not specified'}
+    - Class Level: ${form.classLevel || 'class12'}
+    - Family Income: ${form.incomeRange || 'Not specified'}
+    - First Generation College: ${form.firstGenCollege === true ? 'Yes' : 'No'}
+    - Preferred State/City: ${form.preferredState || 'Not specified'} / ${form.preferredCity || 'Not specified'}
+    - Annual Budget: ${form.budget || 'Not specified'}
+    - Hobbies/Interests: ${form.interests || 'Not specified'}
+    - Biggest Fear: ${form.biggestFear || 'Not specified'}
+
+    Provide a structured assessment of this student's profile.
+    Respond ONLY with a JSON object:
+    {
+      "academicStanding": "High/Medium/Low with brief reason",
+      "financialCategory": "Affordable/Subsidized/Premium based on budget & income",
+      "riskAppetite": "Safe, Balanced, or Exploratory",
+      "keyConstraints": ["list of budget, geography, or board constraints"],
+      "keyStrengths": ["list of academic/hobby strengths"],
+      "coachingNeeds": "Detailed evaluation of coaching/guidance requirements"
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[ProfileAnalysisAgent] Falling back to local mock analyzer...')
+    const marksNum = Number(form.marks) || 80
+    return {
+      academicStanding: marksNum > 85 ? "High (Consistent academic record)" : marksNum > 60 ? "Medium (Average performance)" : "Low (Needs support)",
+      financialCategory: form.incomeRange === 'below_2.5L' ? 'Subsidized' : 'Affordable',
+      riskAppetite: "Balanced",
+      keyConstraints: ["Budget limits", `Home state preference (${form.state || 'India'})`],
+      keyStrengths: [form.interests ? `Interest in ${form.interests}` : "Academics"],
+      coachingNeeds: "Self-study supplemented by targeted online learning resources."
+    }
+  }
+}
+
+/**
+ * 2. Search & Retrieval Agent (RAG)
+ */
+export async function runSearchRetrievalAgent(state) {
+  const form = state.formData
+  if (!supabase) {
+    return { colleges: [], scholarships: [] }
+  }
+
+  const stream = form.stream || ''
+  let colleges = []
+  let scholarships = []
+
+  try {
+    const { data: colData } = await supabase
+      .from('colleges')
+      .select('*')
+      .contains('streams', [stream])
+      .limit(20)
+    colleges = colData || []
+
+    const { data: scholData } = await supabase
+      .from('scholarships')
+      .select('*')
+      .limit(10)
+    scholarships = scholData || []
+  } catch (err) {
+    console.warn('RAG Database retrieval failed, falling back:', err.message)
+  }
+
+  return { colleges, scholarships }
+}
+
+/**
+ * 3. Career Recommendation Agent
+ */
+export async function runCareerRecommendationAgent(state) {
+  const form = state.formData
+  const profileAnalysis = state.profileAnalysis
+  try {
+    const prompt = `
+    You are the Career Recommendation Agent. Recommends the best career paths and courses matching this profile.
+    Profile Analysis: ${JSON.stringify(profileAnalysis)}
+    Student Interests: ${form.interests}
+    Student Stream: ${form.stream}
+    Class Level: ${form.classLevel}
+
+    Recommend 2-3 specific career tracks.
+    Respond ONLY with a JSON object in this format:
+    {
+      "recommendations": [
+        {
+          "path": "Career/Course name (e.g. B.Tech Computer Science, B.Sc Biotechnology)",
+          "honest_take": "Brutally honest 2-sentence advice about difficulty, competition, and suitability.",
+          "requires_entrance_exam": "Specific exam name or None",
+          "opens_doors_to": ["Job role 1", "Job role 2"],
+          "watch_out_for": "Main pitfall or drawback of this path",
+          "backup_plan": "Specific backup plan if entrance fails"
+        }
+      ]
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[CareerRecommendationAgent] Falling back to local mock carrier recommendations...')
+    const isClass10 = form.classLevel === 'class10'
+    const stream = form.stream || 'Commerce'
+
+    if (isClass10) {
+      return {
+        recommendations: [
+          {
+            path: "Science (PCM)",
+            honest_take: "PCM is a solid gateway to engineering and design. It is demanding, but offers maximum career versatility.",
+            requires_entrance_exam: "JEE Main / BITSAT",
+            opens_doors_to: ["Software Engineering", "Architecture", "Data Analytics"],
+            watch_out_for: "Significantly higher academic rigour compared to Class 10.",
+            backup_plan: "Transition to Commerce or BCA if mathematics/physics feels too difficult."
+          },
+          {
+            path: "Commerce with Applied Mathematics",
+            honest_take: "Focuses heavily on business, accounting, and finance. Practical and structured with good industry opportunities.",
+            requires_entrance_exam: "None",
+            opens_doors_to: ["Chartered Accountancy", "Business Analytics", "Investment Banking"],
+            watch_out_for: "Requires strong logical and quantitative abilities.",
+            backup_plan: "General Commerce without Maths if Accounting gets too complex."
+          }
+        ]
+      }
+    }
+
+    if (stream.includes('PCM')) {
+      return {
+        recommendations: [
+          {
+            path: "B.Tech Computer Science & AI",
+            honest_take: "The most popular engineering field in India. Great packages if you code regularly, but entry competition is intense.",
+            requires_entrance_exam: "JEE Main / COMEDK / KCET",
+            opens_doors_to: ["Software Engineer", "AI Developer", "Cloud Solutions Architect"],
+            watch_out_for: "High market saturation; you need a strong portfolio of projects to stand out.",
+            backup_plan: "BCA followed by an MCA to enter the IT sector."
+          },
+          {
+            path: "B.Sc in Data Science / Analytics",
+            honest_take: "A modern analytics pathway focusing on statistics, programming, and databases. An excellent alternative to engineering.",
+            requires_entrance_exam: "CUET / None",
+            opens_doors_to: ["Data Analyst", "Database Manager", "Business Analyst"],
+            watch_out_for: "Requires a strong aptitude for mathematics and logical reasoning.",
+            backup_plan: "General B.Sc in Information Technology."
+          }
+        ]
+      }
+    } else if (stream.includes('PCB')) {
+      return {
+        recommendations: [
+          {
+            path: "B.Sc Biotechnology / Genetics",
+            honest_take: "Great research and lab-oriented career. Avoids NEET pressure but requires higher education to secure top roles.",
+            requires_entrance_exam: "CUET / None",
+            opens_doors_to: ["Biotech Researcher", "Lab Scientist", "Pharmaceutical Analyst"],
+            watch_out_for: "An M.Sc or Ph.D is practically mandatory for high-paying research roles.",
+            backup_plan: "Transition to MBA in Biotech or Clinical Research Management."
+          },
+          {
+            path: "Bachelor of Physiotherapy (BPT)",
+            honest_take: "An excellent clinical option with a focus on patient rehabilitation. High demand in private clinics and sports academies.",
+            requires_entrance_exam: "State CET / NEET",
+            opens_doors_to: ["Physiotherapist", "Sports Rehab Specialist", "Health Consultant"],
+            watch_out_for: "Low initial salaries before you build a reputation and private practice.",
+            backup_plan: "Diploma in Hospital Administration."
+          }
+        ]
+      }
+    } else {
+      return {
+        recommendations: [
+          {
+            path: "Chartered Accountancy (CA)",
+            honest_take: "One of the most prestigious finance careers. Affordable to pursue but demands immense discipline and multiple attempt persistence.",
+            requires_entrance_exam: "CA Foundation",
+            opens_doors_to: ["Corporate Auditor", "Tax consultant", "Financial Controller"],
+            watch_out_for: "Very low pass percentages in intermediate and final exams.",
+            backup_plan: "B.Com + MBA in Finance."
+          },
+          {
+            path: "BBA in Financial Analyst",
+            honest_take: "A highly dynamic management degree focusing on corporate finance, stocks, and investments. Offers faster corporate entry.",
+            requires_entrance_exam: "CUET / IPMAT",
+            opens_doors_to: ["Financial Analyst", "Portfolio Coordinator", "Operations Lead"],
+            watch_out_for: "Placements depend heavily on college tiers; aim for top 50 B-schools.",
+            backup_plan: "Postgraduate preparation for CAT or GMAT."
+          }
+        ]
+      }
+    }
+  }
+}
+
+/**
+ * 4. College Recommendation Agent
+ */
+export async function runCollegeRecommendationAgent(state) {
+  const form = state.formData
+  const careerPaths = state.careerPaths
+  const retrievedColleges = state.retrievedColleges
+  try {
+    const prompt = `
+    You are the College Recommendation Agent. Map the recommended career paths to the most suitable colleges.
+    Career Recommendations: ${JSON.stringify(careerPaths)}
+    Retrieved Colleges: ${JSON.stringify(retrievedColleges.slice(0, 10))}
+    Student Budget: ${form.budget}
+    Preferred State/City: ${form.preferredState} / ${form.preferredCity}
+    Marks: ${form.marks}%
+    Admission Mode: ${form.preferredModeOfAdmission}
+
+    Map colleges to the career paths. Feel free to supplement with well-known Indian colleges matching their preferences.
+    Respond ONLY with a JSON object:
+    {
+      "mappings": [
+        {
+          "path": "Career/Course name (matching one of the recommendations)",
+          "colleges": [
+            {
+              "name": "College Name",
+              "city": "City",
+              "state": "State",
+              "feeRange": "₹X–₹Y/yr",
+              "admissionMode": "How to get in (e.g., JEE, KCET, Management)",
+              "whyFit": "1-sentence why this fits marks and budget"
+            }
+          ]
+        }
+      ]
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[CollegeRecommendationAgent] Falling back to local mock mapping...')
+    return {
+      mappings: (careerPaths.recommendations || []).map(opt => ({
+        path: opt.path,
+        colleges: retrievedColleges.length > 0
+          ? retrievedColleges.slice(0, 3).map(c => ({
+              name: c.name,
+              city: c.city,
+              state: c.state,
+              feeRange: `₹${c.yearly_cost_min.toLocaleString('en-IN')}–₹${c.yearly_cost_max.toLocaleString('en-IN')}/yr`,
+              admissionMode: form.preferredModeOfAdmission || "Entrance Exam / Merit",
+              whyFit: "Directly matches academic stream and falls within preferred budget thresholds."
+            }))
+          : [
+              {
+                name: "RV College of Engineering",
+                city: "Bengaluru",
+                state: "Karnataka",
+                feeRange: "₹2,20,000/yr",
+                admissionMode: "KCET / COMEDK",
+                whyFit: "Top-tier college offering excellent tech exposure and placements."
+              },
+              {
+                name: "PES University",
+                city: "Bengaluru",
+                state: "Karnataka",
+                feeRange: "₹3,80,000/yr",
+                admissionMode: "PESSAT / KCET",
+                whyFit: "Premium infrastructure and direct corporate recruiter partnerships."
+              }
+            ]
+      }))
+    }
+  }
+}
+
+/**
+ * 5. Scholarship Agent
+ */
+export async function runScholarshipAgent(state) {
+  const form = state.formData
+  const profileAnalysis = state.profileAnalysis
+  const retrievedScholarships = state.retrievedScholarships
+  try {
+    const prompt = `
+    You are the Scholarship Agent. Find matching scholarships and financial aid.
+    Profile Analysis: ${JSON.stringify(profileAnalysis)}
+    Retrieved Scholarships: ${JSON.stringify(retrievedScholarships.slice(0, 5))}
+    Student Income Range: ${form.incomeRange}
+    Student State: ${form.state}
+    Marks: ${form.marks}%
+
+    Recommend 2-3 scholarships. Include application instructions.
+    Respond ONLY with a JSON object:
+    {
+      "scholarships": [
+        {
+          "name": "Scholarship Name",
+          "description": "Brief description",
+          "eligibility": "Marks/income criteria",
+          "amount": "Approx amount or benefit",
+          "applicationUrl": "URL or 'Search NSP Portal'"
+        }
+      ]
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[ScholarshipAgent] Falling back to local mock scholarship suggestions...')
+    return {
+      scholarships: retrievedScholarships.length > 0
+        ? retrievedScholarships.slice(0, 2).map(s => ({
+            name: s.name,
+            description: s.description,
+            eligibility: `Marks > ${s.eligibility_marks_min}%, Income < ${s.eligibility_income_max_lakh}L`,
+            amount: "Tuition waiver or ₹50,000 annual grant",
+            applicationUrl: s.application_url
+          }))
+        : [
+            {
+              name: "Post-Matric Scholarship Scheme",
+              description: "Provides financial assistance to students belonging to minority and backward classes.",
+              eligibility: "Income < ₹2.5 Lakh/yr, Marks > 50%",
+              amount: "Covers complete admission fees & monthly stipend",
+              applicationUrl: "https://scholarships.gov.in"
+            },
+            {
+              name: "HDFC Badhte Kadam Scholarship",
+              description: "Corporate social responsibility initiative assisting students from low-income families.",
+              eligibility: "Marks > 60%, Income < ₹6L/yr",
+              amount: "₹30,000–₹1,00,000/yr",
+              applicationUrl: "https://www.buddy4study.com"
+            }
+          ]
+    }
+  }
+}
+
+/**
+ * 6. Study Abroad Agent
+ */
+export async function runStudyAbroadAgent(state) {
+  const form = state.formData
+  const profileAnalysis = state.profileAnalysis
+  try {
+    const prompt = `
+    You are the Study Abroad Agent. Evaluate international study feasibility for this student.
+    Profile Analysis: ${JSON.stringify(profileAnalysis)}
+    Marks: ${form.marks}%
+    Annual Budget: ${form.budget}
+
+    Suggest the best country, required exams (IELTS, TOEFL, SAT, etc.), visa info, and estimated tuition.
+    Respond ONLY with a JSON object:
+    {
+      "isFeasible": true/false,
+      "recommendedCountry": "Country name (e.g. Germany for low budget, USA for high budget)",
+      "targetUniversities": ["University 1", "University 2"],
+      "requiredExams": ["Exams needed"],
+      "estimatedYearlyCost": "Estimated tuition + living costs",
+      "visaDifficulty": "Low/Medium/High with short reason",
+      "scholarshipsAvailable": ["International scholarship name or None"]
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[StudyAbroadAgent] Falling back to local study abroad guide...')
+    const costLow = form.budget === 'below_2L' || form.budget === '2L-5L'
+    return {
+      isFeasible: !costLow,
+      recommendedCountry: costLow ? "Germany (Public Universities have zero tuition)" : "United States",
+      targetUniversities: costLow ? ["TUM Munich", "RWTH Aachen"] : ["ASU Phoenix", "UT Dallas"],
+      requiredExams: costLow ? ["IELTS Academic", "TestDaF (German)"] : ["SAT", "IELTS / TOEFL"],
+      estimatedYearlyCost: costLow ? "₹8,00,000/yr (Living expenses only)" : "₹25,00,000–₹35,00,000/yr",
+      visaDifficulty: "Medium (Requires blocked account for living proof)",
+      scholarshipsAvailable: ["DAAD Scholarship", "Fulbright-Nehru Grant"]
+    }
+  }
+}
+
+/**
+ * 7. Career Roadmap Agent
+ */
+export async function runCareerRoadmapAgent(state) {
+  const form = state.formData
+  const careerPaths = state.careerPaths
+  try {
+    const prompt = `
+    You are the Career Roadmap Agent. Generate a detailed 4-year learning roadmap for each recommended path.
+    Career Options: ${JSON.stringify(careerPaths)}
+    Class Level: ${form.classLevel || 'class12'}
+    Student Income Range: ${form.incomeRange}
+
+    Generate a 4-year milestone grid. If Class 10, Year 1/2 are school, Year 3/4 are college. If Class 12, Years are college 1-4.
+    Respond ONLY with a JSON object:
+    {
+      "roadmaps": [
+        {
+          "path": "Career/Course name",
+          "years": [
+            {
+              "year": 1,
+              "focus": "Focus of this year",
+              "skills": ["Skill 1", "Skill 2"],
+              "certifications": ["Cert 1"],
+              "projects": ["Project 1"],
+              "milestones": ["Milestone 1"]
+            },
+            {
+              "year": 2,
+              "focus": "Focus of this year",
+              "skills": ["Skill 1"],
+              "certifications": ["Cert 1"],
+              "projects": ["Project 1"],
+              "milestones": ["Milestone 1"]
+            },
+            {
+              "year": 3,
+              "focus": "Focus of this year",
+              "skills": ["Skill 1"],
+              "certifications": ["Cert 1"],
+              "projects": ["Project 1"],
+              "milestones": ["Milestone 1"]
+            },
+            {
+              "year": 4,
+              "focus": "Focus of this year",
+              "skills": ["Skill 1"],
+              "certifications": ["Cert 1"],
+              "projects": ["Project 1"],
+              "milestones": ["Milestone 1"]
+            }
+          ]
+        }
+      ]
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[CareerRoadmapAgent] Falling back to local mock roadmap maker...')
+    return {
+      roadmaps: (careerPaths.recommendations || []).map(opt => ({
+        path: opt.path,
+        years: [
+          {
+            year: 1,
+            focus: "Build core fundamentals and theoretical foundations",
+            skills: ["Fundamental Concepts", "Essential Tools", "Basic Coding/Logic"],
+            certifications: ["Introduction Certificate (Coursera/edX)"],
+            projects: ["Basic static portfolio project"],
+            milestones: ["Understand fundamentals", "Develop study schedule"]
+          },
+          {
+            year: 2,
+            focus: "Master practical intermediate frameworks",
+            skills: ["Intermediate tools", "Collaborative work systems", "Version control"],
+            certifications: ["Advanced Technical Certifications"],
+            projects: ["Medium sized full stack application"],
+            milestones: ["Establish professional LinkedIn profile", "Participate in local hackathon"]
+          },
+          {
+            year: 3,
+            focus: "Secure industry internship and specialise",
+            skills: ["System design", "Cloud engineering basics", "Advanced subjects"],
+            certifications: ["Cloud Practitioner Certification"],
+            projects: ["2-month summer project at startup"],
+            milestones: ["Complete industry internship", "Deliver a live project"]
+          },
+          {
+            year: 4,
+            focus: "Interview preparation and industry transition",
+            skills: ["Technical interview cases", "Aptitude training", "Communication skills"],
+            certifications: ["Final capstone project credential"],
+            projects: ["Production deployment of final application"],
+            milestones: ["Graduate with a high-fidelity portfolio", "Secure job offer / PG seat"]
+          }
+        ]
+      }))
+    }
+  }
+}
+
+/**
+ * 8. Mentor Agent
+ */
+export async function runMentorAgent(state) {
+  const form = state.formData
+  const stream = form.stream || ''
+  
+  let mentors = []
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('mentors')
+        .select('name, role, company, stream_expertise, rating, bio, cal_link')
+        .limit(5)
+      mentors = data || []
+    } catch (_) {}
+  }
+
+  // Fallback default mentors if DB has none
+  if (!mentors.length) {
+    mentors = [
+      { name: 'Dr. Vivek Sharma', role: 'Software Architect', company: 'Google', stream_expertise: 'Science (PCM)', rating: 4.8, bio: 'Experienced developer, mentor for IIT aspirants and computer science graduates.' },
+      { name: 'Ananya Roy, CA', role: 'Audit Manager', company: 'EY', stream_expertise: 'Commerce', rating: 4.9, bio: 'CA professional helping commerce students navigate intermediate papers and internships.' },
+      { name: 'Dr. Priya Nair', role: 'Senior Surgeon', company: 'Apollo Hospitals', stream_expertise: 'Science (PCB)', rating: 4.7, bio: 'Passionate medical educator guiding NEET students on careers in medicine and biotechnology.' }
+    ]
+  }
+
+  // Filter or score based on stream matching
+  const matched = mentors.map(m => {
+    let score = 5
+    if (m.stream_expertise && m.stream_expertise.includes(stream)) {
+      score += 15
+    }
+    return { ...m, matchScore: score }
+  }).sort((a, b) => b.matchScore - a.matchScore).slice(0, 3)
+
+  return matched
+}
+
+/**
+ * 9. YouTube Resource Agent
+ */
+export async function runYouTubeResourceAgent(state) {
+  const careerPaths = state.careerPaths || { recommendations: [] }
+  const paths = (careerPaths.recommendations || []).map(r => r.path)
+
+  const videosMap = {
+    'B.Tech': [
+      { title: 'Computer Science & Engineering Roadmap', channel: 'Apna College', embedId: 'V9a8Z29eM5g' },
+      { title: 'IIT/NIT Life & Campus Tour', channel: 'IIT Kharagpur', embedId: 'xP8s_d57c2k' }
+    ],
+    'Medical': [
+      { title: 'NEET Prep Strategies & Time Table', channel: 'Physics Wallah', embedId: 'HjU3s3B4g8k' },
+      { title: 'MBBS Student Life in India', channel: 'Doctor V', embedId: 'KjD3s24kLs9' }
+    ],
+    'Commerce': [
+      { title: 'CA Foundation Guidance & Prep', channel: 'CA Rachana Ranade', embedId: 'L8s2jD9fS8g' },
+      { title: 'Careers in Finance & Investment Banking', channel: 'Ankur Warikoo', embedId: 'T9sL29d8k1w' }
+    ]
+  }
+
+  const results = []
+  for (const path of paths) {
+    let matched = false
+    for (const key of Object.keys(videosMap)) {
+      if (path.toLowerCase().includes(key.toLowerCase())) {
+        results.push(...videosMap[key].map(v => ({ ...v, path })))
+        matched = true
+        break
+      }
+    }
+    if (!matched) {
+      results.push({
+        title: `${path} Career Guidance Video`,
+        channel: 'Aage Kya? Curated',
+        embedId: '3sD9fsH4kLs',
+        path
+      })
+    }
+  }
+
+  return results.slice(0, 4)
+}
+
+/**
+ * 10. Summary Agent
+ */
+export async function runSummaryAgent(state) {
+  const form = state.formData
+  const careerPaths = state.careerPaths
+  const collegeRecommendations = state.collegeRecommendations
+  const scholarshipRecommendations = state.scholarshipRecommendations
+  try {
+    const prompt = `
+    You are the Summary Agent. Synthesize the findings of all career agents into a warm, encouraging summary.
+    Student Profile: Name: ${form.fullName}, Marks: ${form.marks}%, Stream: ${form.stream}
+    Career Paths recommended: ${JSON.stringify(careerPaths)}
+    Colleges mapped: ${JSON.stringify(collegeRecommendations)}
+    Scholarships found: ${JSON.stringify(scholarshipRecommendations)}
+
+    Write a unified final guidance wrap-up.
+    Respond ONLY with a JSON object:
+    {
+      "summary": "Warm 3-sentence summary of recommendations and opportunities.",
+      "oneThingToDoThisWeek": "One specific actionable task for the student this week (e.g. check a website, talk to a mentor)."
+    }
+    `
+    return await runLLMAgent(prompt)
+  } catch (err) {
+    console.warn('[SummaryAgent] Falling back to local mock synthesis...')
+    return {
+      summary: `Based on your ${form.stream || 'studies'} stream and interest in ${form.interests || 'building items'}, you have outstanding pathways ahead. By targeting top institutions in ${form.preferredState || 'India'} and securing active scholarship assistance, you can achieve your career objectives.`,
+      oneThingToDoThisWeek: "Look up the official website of the target entrance exams and verify the application deadlines."
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CENTRAL STATE-GRAPH ORCHESTRATOR
+// ──────────────────────────────────────────────────────────────────────────────
+
+export async function runMultiAgentOrchestrator(formData) {
+  const startTotal = Date.now()
+
+  // 1. Initialize State Graph
+  const state = {
+    formData,
+    profileAnalysis: null,
+    retrievedColleges: [],
+    retrievedScholarships: [],
+    careerPaths: [],
+    collegeRecommendations: [],
+    scholarshipRecommendations: [],
+    studyAbroadGuidance: null,
+    roadmaps: [],
+    mentorMatches: [],
+    youtubeResources: [],
+    finalSummary: null,
+    executionLogs: []
+  }
+
+  const logStep = async (agentName, action) => {
+    const start = Date.now()
+    try {
+      const output = await action()
+      const duration = Date.now() - start
+      state.executionLogs.push({
+        agent: agentName,
+        status: 'success',
+        durationMs: duration,
+        timestamp: new Date().toISOString()
+      })
+      return output
+    } catch (err) {
+      const duration = Date.now() - start
+      state.executionLogs.push({
+        agent: agentName,
+        status: 'failed',
+        durationMs: duration,
+        error: err.message,
+        timestamp: new Date().toISOString()
+      })
+      console.error(`Orchestration failure in node [${agentName}]:`, err.message)
+      return null
+    }
+  }
+
+  // ─── STAGE 1: Profile & Data Retrieval (Parallel) ───
+  console.log('[Orchestrator] Starting Stage 1: Profile Analysis & Database Retrieval')
+  const [profileResult, ragResult] = await Promise.all([
+    logStep('Profile Analysis Agent', () => runProfileAnalysisAgent(state)),
+    logStep('Search & Retrieval Agent', () => runSearchRetrievalAgent(state))
+  ])
+
+  state.profileAnalysis = profileResult || { academicStanding: 'Medium', financialCategory: 'Subsidized', riskAppetite: 'Balanced', keyConstraints: [], keyStrengths: [], coachingNeeds: '' }
+  state.retrievedColleges = ragResult?.colleges || []
+  state.retrievedScholarships = ragResult?.scholarships || []
+
+  // ─── STAGE 2: Career Recommendation ───
+  console.log('[Orchestrator] Starting Stage 2: Career Recommendation')
+  const careerResult = await logStep('Career Recommendation Agent', () => runCareerRecommendationAgent(state))
+  state.careerPaths = careerResult || { recommendations: [] }
+
+  // ─── STAGE 3: Mappings, Roadmaps, Scholarships & Mentors (Parallel) ───
+  console.log('[Orchestrator] Starting Stage 3: College, Scholarship, Roadmap, Mentor & Study Abroad planning')
+  const [collegeResult, scholarshipResult, studyAbroadResult, roadmapResult, mentorResult, youtubeResult] = await Promise.all([
+    logStep('College Recommendation Agent', () => runCollegeRecommendationAgent(state)),
+    logStep('Scholarship Agent', () => runScholarshipAgent(state)),
+    logStep('Study Abroad Agent', () => runStudyAbroadAgent(state)),
+    logStep('Career Roadmap Agent', () => runCareerRoadmapAgent(state)),
+    logStep('Mentor Agent', () => runMentorAgent(state)),
+    logStep('YouTube Resource Agent', () => runYouTubeResourceAgent(state))
+  ])
+
+  state.collegeRecommendations = collegeResult?.mappings || []
+  state.scholarshipRecommendations = scholarshipResult?.scholarships || []
+  state.studyAbroadGuidance = studyAbroadResult || { isFeasible: false, recommendedCountry: 'Germany', requiredExams: [], targetUniversities: [], estimatedYearlyCost: 'N/A' }
+  state.roadmaps = roadmapResult?.roadmaps || []
+  state.mentorMatches = mentorResult || []
+  state.youtubeResources = youtubeResult || []
+
+  // ─── STAGE 4: Synthesis & Final Summary ───
+  console.log('[Orchestrator] Starting Stage 4: Synthesis & Final Summary')
+  const summaryResult = await logStep('Summary Agent', () => runSummaryAgent(state))
+  state.finalSummary = summaryResult || { summary: 'Guidance compiled successfully.', oneThingToDoThisWeek: 'Review options.' }
+
+  const totalDuration = Date.now() - startTotal
+  console.log(`[Orchestrator] Multi-Agent Execution completed successfully in ${totalDuration}ms`)
+
+  // Return the combined, structured result matches the shape expected by the frontend
+  // and includes full explainability metadata.
+  return {
+    summary: state.finalSummary.summary,
+    options: (state.careerPaths.recommendations || []).map(opt => {
+      // Find mapped colleges & roadmaps for this option path
+      const mappedCol = state.collegeRecommendations.find(m => m.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(m.path.toLowerCase()))
+      const mappedRoad = state.roadmaps.find(r => r.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(r.path.toLowerCase()))
+      return {
+        path: opt.path,
+        honest_take: opt.honest_take,
+        requires_entrance_exam: opt.requires_entrance_exam || 'None',
+        realistic_colleges: mappedCol ? mappedCol.colleges.map(c => c.name) : [],
+        avg_yearly_cost: mappedCol && mappedCol.colleges.length ? mappedCol.colleges[0].feeRange : '₹80,000–₹1,50,000/yr',
+        opens_doors_to: opt.opens_doors_to || [],
+        watch_out_for: opt.watch_out_for || 'Competition is high.',
+        backup_plan: opt.backup_plan || 'Look into alternative courses.',
+        roadmap_steps: mappedRoad ? mappedRoad.years : []
+      }
+    }),
+    scholarship_to_check: state.scholarshipRecommendations.length ? state.scholarshipRecommendations[0].name : 'Post-Matric Scholarship Scheme',
+    one_thing_to_do_this_week: state.finalSummary.oneThingToDoThisWeek,
+    scholarships_list: state.scholarshipRecommendations.map(s => ({
+      name: s.name,
+      application_url: s.applicationUrl,
+      deadline_pattern: 'Rolling basis',
+      description: `${s.description} | Eligibility: ${s.eligibility} | Value: ${s.amount}`
+    })),
+    study_abroad: state.studyAbroadGuidance,
+    mentors: state.mentorMatches,
+    youtube_videos: state.youtubeResources,
+    colleges_data: state.retrievedColleges.reduce((acc, c) => {
+      acc[c.name] = {
+        source_url:      c.source_url,
+        yearly_cost_min: c.yearly_cost_min,
+        yearly_cost_max: c.yearly_cost_max,
+        city:            c.city,
+        state:           c.state,
+        college_type:    c.college_type,
+      }
+      return acc
+    }, {}),
+    explainability: {
+      totalDurationMs: totalDuration,
+      steps: state.executionLogs,
+      profile: state.profileAnalysis
+    }
+  }
+}

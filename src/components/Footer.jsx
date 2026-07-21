@@ -3,9 +3,15 @@ import { Link } from 'react-router-dom'
 const footerLinks = [
   { to: '/', label: 'Home' },
   { to: '/onboarding', label: 'Get Started' },
+  { to: '/career-pipeline', label: 'Careers' },
+  { to: '/competitive-exams', label: 'Exams' },
+  { to: '/scholarships', label: 'Scholarships' },
+  { to: '/study-abroad', label: 'Study Abroad' },
   { to: '/mentors', label: 'Mentors' },
-  { to: '/result', label: 'My Result' },
+  { to: '/chat', label: 'AI Chat' },
+  { to: '/mentor-apply', label: 'Become a Mentor' },
 ]
+
 
 export default function Footer() {
   const year = new Date().getFullYear()

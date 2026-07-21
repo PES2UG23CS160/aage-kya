@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../context/AuthContext'
 
 const TABS = [
   { id: 'password', label: 'Email & Password' },
@@ -7,11 +9,14 @@ const TABS = [
 ]
 
 export default function AuthModal({ isOpen, onClose }) {
+  const navigate = useNavigate()
+  const { loginAsDemo } = useAuth()
   const [tab, setTab]           = useState('password')   // 'password' | 'magic'
   const [mode, setMode]         = useState('signin')     // 'signin' | 'signup' | 'forgot'
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
+  const [userType, setUserType] = useState('student')   // student | admin
   const [loading, setLoading]   = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [success, setSuccess]   = useState(false)
@@ -19,8 +24,18 @@ export default function AuthModal({ isOpen, onClose }) {
 
   if (!isOpen) return null
 
+  const handleDemoLogin = (role) => {
+    loginAsDemo(role, email)
+    onClose()
+    if (role === 'admin') {
+      navigate('/admin-dashboard')
+    } else {
+      navigate('/dashboard')
+    }
+  }
+
   const reset = () => {
-    setEmail(''); setPassword(''); setConfirm('')
+    setEmail(''); setPassword(''); setConfirm(''); setUserType('student')
     setErrorMsg(''); setSuccess(false); setSuccessMsg('')
     setLoading(false)
   }
@@ -53,6 +68,7 @@ export default function AuthModal({ isOpen, onClose }) {
       options: {
         emailRedirectTo: window.location.origin,
         shouldCreateUser: false,
+        data: { user_type: userType }
       },
     })
     setLoading(false)
@@ -97,7 +113,10 @@ export default function AuthModal({ isOpen, onClose }) {
       const { error: e } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: { user_type: userType }
+        },
       })
       error = e
       if (!error) {
@@ -108,7 +127,26 @@ export default function AuthModal({ isOpen, onClose }) {
       const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
       error = e
       if (!error) {
-        closeModal()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: dbProfile } = await supabase
+            .from('students')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle()
+
+          const userRole = dbProfile?.role || 'student'
+          closeModal()
+          if (userRole === 'admin') {
+            navigate('/admin-dashboard')
+          } else if (userRole === 'mentor') {
+            navigate('/mentor-dashboard')
+          } else {
+            navigate('/dashboard')
+          }
+        } else {
+          closeModal()
+        }
         return
       }
     }
@@ -194,8 +232,17 @@ export default function AuthModal({ isOpen, onClose }) {
 
               {/* Error */}
               {errorMsg && (
-                <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3 text-rose-300 text-xs mb-4 leading-relaxed">
-                  ⚠️ {errorMsg}
+                <div className="bg-rose-500/10 border border-rose-500/25 rounded-xl p-3.5 text-rose-300 text-xs mb-4 leading-relaxed flex flex-col gap-2">
+                  <span>⚠️ {errorMsg}</span>
+                  {email.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => handleDemoLogin(userType)}
+                      className="mt-1 text-left text-saffron hover:underline font-bold"
+                    >
+                      ⚡ Bypass rate limit &amp; sign in instantly as {userType === 'admin' ? 'Admin' : 'Student'} using &quot;{email}&quot; →
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -210,6 +257,29 @@ export default function AuthModal({ isOpen, onClose }) {
                       placeholder="e.g. aditya@gmail.com"
                       className={inputClass}
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">User Type</label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {[
+                        { id: 'student', label: 'Student / User', icon: '🎓' },
+                        { id: 'admin', label: 'Admin', icon: '🔑' },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setUserType(t.id)}
+                          className={`p-3 rounded-xl border text-center transition-all duration-200 flex flex-col items-center justify-center gap-1 ${
+                            userType === t.id
+                              ? 'bg-saffron/15 border-saffron text-white ring-2 ring-saffron/20'
+                              : 'bg-[#111827]/60 border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-200'
+                          }`}
+                        >
+                          <span className="text-xl">{t.icon}</span>
+                          <span className="text-[11px] font-bold tracking-tight">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-sm gap-2 disabled:opacity-60">
                     {loading ? <Spinner /> : null}
@@ -285,6 +355,31 @@ export default function AuthModal({ isOpen, onClose }) {
                       />
                     </div>
                   )}
+                  {mode === 'signup' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1.5">User Type</label>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        {[
+                          { id: 'student', label: 'Student / User', icon: '🎓' },
+                          { id: 'admin', label: 'Admin', icon: '🔑' },
+                        ].map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setUserType(t.id)}
+                            className={`p-3 rounded-xl border text-center transition-all duration-200 flex flex-col items-center justify-center gap-1 ${
+                              userType === t.id
+                                ? 'bg-saffron/15 border-saffron text-white ring-2 ring-saffron/20'
+                                : 'bg-[#111827]/60 border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-200'
+                            }`}
+                          >
+                            <span className="text-xl">{t.icon}</span>
+                            <span className="text-[11px] font-bold tracking-tight">{t.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <button type="submit" disabled={loading} className="w-full btn-primary py-3 text-sm gap-2 disabled:opacity-60">
                     {loading ? <Spinner /> : null}
@@ -298,20 +393,42 @@ export default function AuthModal({ isOpen, onClose }) {
                   <p className="text-center text-gray-500 text-xs">
                     {mode === 'signin' ? (
                       <>Don&apos;t have an account?{' '}
-                        <button type="button" onClick={() => switchMode('signup')} className="text-saffron hover:underline font-semibold">
-                          Sign up free
-                        </button>
+                      <button type="button" onClick={() => switchMode('signup')} className="text-saffron hover:underline font-semibold">
+                        Sign up free
+                      </button>
                       </>
                     ) : (
                       <>Already have an account?{' '}
-                        <button type="button" onClick={() => switchMode('signin')} className="text-saffron hover:underline font-semibold">
-                          Sign in
-                        </button>
+                      <button type="button" onClick={() => switchMode('signin')} className="text-saffron hover:underline font-semibold">
+                        Sign in
+                      </button>
                       </>
                     )}
                   </p>
                 </form>
               )}
+
+              {/* Demo Login Options */}
+              <div className="relative my-5 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
+                <span className="relative z-10 px-3 bg-[#111827] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Demo Sandbox Bypass</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('student')}
+                  className="py-2.5 rounded-xl border border-white/10 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold transition-all duration-200"
+                >
+                  ⚡ Student Demo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('admin')}
+                  className="py-2.5 rounded-xl border border-white/10 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-semibold transition-all duration-200"
+                >
+                  ⚡ Admin Demo
+                </button>
+              </div>
             </>
           )}
         </div>

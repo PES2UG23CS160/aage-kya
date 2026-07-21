@@ -35,6 +35,7 @@ before(async () => {
         SUPABASE_ANON_KEY: '',
         SUPABASE_SERVICE_ROLE_KEY: '',
         GROQ_API_KEY: '',
+        RESEND_API_KEY: '',
         ALLOWED_ORIGINS: '',
       }
     })

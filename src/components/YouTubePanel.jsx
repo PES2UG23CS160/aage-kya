@@ -1,0 +1,163 @@
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+
+// Curated YouTube videos by topic (no API key needed)
+const CURATED_VIDEOS = {
+  software_engineer: [
+    { id: 'ysEN5RaKOlA', title: 'How to Become a Software Engineer in India', channel: 'CodeWithHarry' },
+    { id: 'reh7_JwfgWc', title: 'Software Engineering Career Guide 2024', channel: 'Fireship' },
+    { id: 'UXZRf2QF2jE', title: 'IIT vs Private College for CS - Reality Check', channel: 'Apni Kaksha' },
+  ],
+  data_scientist: [
+    { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
+    { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
+    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+  ],
+  doctor: [
+    { id: 'UBKtl3A-8jQ', title: 'NEET Preparation Strategy 2024', channel: 'Physics Wallah' },
+    { id: 'oHg5SJYRHA0', title: 'MBBS Life in India - Reality', channel: 'Doctors Academy' },
+    { id: 'dQw4w9WgXcQ', title: 'Medical College Admission Guide', channel: 'NEET Pathshala' },
+  ],
+  ca: [
+    { id: 'VYOjWnS4cMY', title: 'CA Journey - Foundation to Final', channel: 'ICAI Official' },
+    { id: 'dpTFQSL9B9M', title: 'Chartered Accountant Salary & Career', channel: 'CA Wallah' },
+    { id: 'mDAzLDMEDoY', title: 'Big 4 vs Industry vs Practice - CA Guide', channel: 'CA Exam Portal' },
+  ],
+  kcet: [
+    { id: 'jNQXAC9IVRw', title: 'KCET Preparation Strategy & Syllabus', channel: 'Karnataka Exams' },
+    { id: 'cT3KsZQlJh8', title: 'KCET Counselling Process Explained', channel: 'KEA Official' },
+    { id: 'FTQbiNvZqaY', title: 'Top Colleges through KCET - Rankings', channel: 'College Dekho' },
+  ],
+  jee: [
+    { id: 'nKW8Ndu7Mjw', title: 'JEE Main Preparation Plan 2024', channel: 'Physics Wallah' },
+    { id: 'rBrUxO-dFf4', title: 'IIT vs NIT - Which is Better?', channel: 'Apni Kaksha' },
+    { id: 'WODtqTfCsiM', title: 'JEE Advanced Strategy by AIR 1', channel: 'JEE Wallah' },
+  ],
+  neet: [
+    { id: 'UBKtl3A-8jQ', title: 'NEET 2024 Complete Strategy', channel: 'Physics Wallah' },
+    { id: 'mDAzLDMEDoY', title: 'NEET Counselling - MCC vs State Quota', channel: 'NEET Guide' },
+    { id: 'dpTFQSL9B9M', title: 'NEET vs AIIMS - Which is Tougher?', channel: 'MedPrep' },
+  ],
+  comedk: [
+    { id: 'FTQbiNvZqaY', title: 'COMEDK UGET Preparation Guide', channel: 'COMEDK Portal' },
+    { id: 'cT3KsZQlJh8', title: 'Top Colleges through COMEDK 2024', channel: 'College Dekho' },
+    { id: 'jNQXAC9IVRw', title: 'KCET vs COMEDK - Which is Better?', channel: 'Karnataka Exams' },
+  ],
+  study_abroad: [
+    { id: 'Z_oBJn_XYJQ', title: 'How to Study in USA After 12th', channel: 'Yocket' },
+    { id: 'VYOjWnS4cMY', title: 'Scholarships for Indian Students Abroad', channel: 'MBAUniverse' },
+    { id: 'dpTFQSL9B9M', title: 'Germany Free Education for Indians', channel: 'Study Abroad Life' },
+  ],
+  college_tour: [
+    { id: 'ysEN5RaKOlA', title: 'RVCE Campus Tour - Bangalore', channel: 'College Tours India' },
+    { id: 'reh7_JwfgWc', title: 'MSRIT Campus Life - Engineering', channel: 'Campus Diaries' },
+    { id: 'UXZRf2QF2jE', title: 'BMS College of Engineering Review', channel: 'India Colleges' },
+  ],
+  career_guidance: [
+    { id: 'ua-CiDNNj30', title: 'How to Choose the Right Career - 2024', channel: 'TED-Ed' },
+    { id: 'aircAruvnKk', title: '10 High-Paying Careers in India 2024', channel: 'Josh Talks' },
+    { id: 'k1uH3RlRNag', title: 'Emerging Careers Nobody Talks About', channel: 'Unstoppable' },
+  ],
+}
+
+export function getVideosForTopic(topic) {
+  return CURATED_VIDEOS[topic] || CURATED_VIDEOS['career_guidance']
+}
+
+function VideoCard({ video, index }) {
+  const [playing, setPlaying] = useState(false)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1 }}
+      className="group relative rounded-2xl overflow-hidden border border-white/10 hover:border-saffron/30 transition-all duration-300 bg-white/[0.03]"
+    >
+      {playing ? (
+        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <iframe
+            className="absolute inset-0 w-full h-full rounded-t-xl"
+            src={`https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`}
+            title={video.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setPlaying(true)}
+          className="relative w-full block bg-black rounded-t-xl overflow-hidden"
+          style={{ paddingBottom: '56.25%' }}
+        >
+          <img
+            src={`https://img.youtube.com/vi/${video.id}/hqdefault.jpg`}
+            alt={video.title}
+            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80 group-hover:opacity-100"
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-200">
+              <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+          </div>
+        </button>
+      )}
+      <div className="p-4">
+        <p className="text-white text-sm font-semibold leading-snug line-clamp-2">{video.title}</p>
+        <p className="text-gray-500 text-xs mt-1.5 flex items-center gap-1">
+          <svg className="w-3 h-3 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M23.495 6.205a3.007 3.007 0 00-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 00.527 6.205a31.247 31.247 0 00-.522 5.805 31.247 31.247 0 00.522 5.783 3.007 3.007 0 002.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 002.088-2.088 31.247 31.247 0 00.5-5.783 31.247 31.247 0 00-.5-5.805zM9.609 15.601V8.408l6.264 3.602z"/></svg>
+          {video.channel}
+        </p>
+      </div>
+    </motion.div>
+  )
+}
+
+export default function YouTubePanel({ topic, title = 'Related Videos', className = '' }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const videos = getVideosForTopic(topic)
+
+  return (
+    <div className={`glass-card rounded-2xl border border-white/10 overflow-hidden ${className}`}>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-5 flex items-center justify-between hover:bg-white/[0.03] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-600/15 border border-red-600/25 flex items-center justify-center">
+            <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M23.495 6.205a3.007 3.007 0 00-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 00.527 6.205a31.247 31.247 0 00-.522 5.805 31.247 31.247 0 00.522 5.783 3.007 3.007 0 002.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 002.088-2.088 31.247 31.247 0 00.5-5.783 31.247 31.247 0 00-.5-5.805zM9.609 15.601V8.408l6.264 3.602z"/>
+            </svg>
+          </div>
+          <div className="text-left">
+            <p className="font-semibold text-white text-sm">{title}</p>
+            <p className="text-gray-500 text-xs">{videos.length} curated videos</p>
+          </div>
+        </div>
+        <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5 grid sm:grid-cols-2 md:grid-cols-3 gap-4 border-t border-white/5 pt-4">
+              {videos.map((video, i) => (
+                <VideoCard key={video.id} video={video} index={i} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}

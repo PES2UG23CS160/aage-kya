@@ -411,6 +411,174 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── EXPLORE MODULES ── */}
+      <section className="py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <div className="absolute inset-0 bg-mesh opacity-20 pointer-events-none" />
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="text-center mb-14">
+            <div className="inline-block bg-purple-500/10 border border-purple-500/20 rounded-full px-4 py-1.5 text-purple-300 text-xs font-semibold tracking-widest uppercase mb-4">
+              Explore More
+            </div>
+            <h2 className="font-display text-4xl md:text-5xl font-bold text-white mb-4">
+              Everything you need, <span className="gradient-text">one platform.</span>
+            </h2>
+            <p className="text-gray-400 text-lg max-w-xl mx-auto">
+              Beyond career guidance — exams, scholarships, study abroad, and interactive roadmaps.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-5">
+            {/* Career Pipeline */}
+            <Link to="/career-pipeline" className="group glass-card-glow p-8 flex flex-col gap-4 hover:scale-[1.02] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                🗺️
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-xl text-white mb-2 group-hover:text-emerald-400 transition-colors">
+                  Career Pipeline
+                </h3>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  Interactive roadmaps from your current stage to your dream career. Explore 6+ career paths with skills, salaries, and milestones.
+                </p>
+              </div>
+              <div className="mt-auto pt-3 border-t border-white/5">
+                <span className="text-emerald-400 text-sm font-semibold group-hover:underline">Explore Careers →</span>
+              </div>
+            </Link>
+
+            {/* Competitive Exams */}
+            <Link to="/competitive-exams" className="group glass-card-glow p-8 flex flex-col gap-4 hover:scale-[1.02] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                🎯
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-xl text-white mb-2 group-hover:text-blue-400 transition-colors">
+                  Exam Predictor
+                </h3>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  Enter your KCET, JEE, NEET, or COMEDK rank and see which colleges and branches you can get. Interactive counselling simulator included.
+                </p>
+              </div>
+              <div className="mt-auto pt-3 border-t border-white/5">
+                <span className="text-blue-400 text-sm font-semibold group-hover:underline">Check Your Rank →</span>
+              </div>
+            </Link>
+
+            {/* Study Abroad */}
+            <Link to="/study-abroad" className="group glass-card-glow p-8 flex flex-col gap-4 hover:scale-[1.02] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                ✈️
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-xl text-white mb-2 group-hover:text-purple-400 transition-colors">
+                  Study Abroad
+                </h3>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  Complete guides for 8 countries — universities, costs, visas, scholarships, work permits, and PR pathways.
+                </p>
+              </div>
+              <div className="mt-auto pt-3 border-t border-white/5">
+                <span className="text-purple-400 text-sm font-semibold group-hover:underline">Explore Countries →</span>
+              </div>
+            </Link>
+          </div>
+
+          {/* Bottom row: Scholarships + College Overview + Become a Mentor */}
+          <div className="mt-5 grid sm:grid-cols-3 gap-4">
+            <Link to="/scholarships" className="glass-card p-5 flex items-center gap-4 hover:border-amber-500/30 hover:scale-[1.01] transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-xl flex-shrink-0">💰</div>
+              <div>
+                <p className="text-white font-bold text-sm">Scholarship Directory</p>
+                <p className="text-gray-500 text-xs">18+ scholarships for every level</p>
+              </div>
+              <span className="ml-auto text-amber-400 text-xs font-semibold group-hover:underline">Browse →</span>
+            </Link>
+
+            <Link to="/college/rvce" className="glass-card p-5 flex items-center gap-4 hover:border-blue-500/30 hover:scale-[1.01] transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-xl flex-shrink-0">🏫</div>
+              <div>
+                <p className="text-white font-bold text-sm">College Overview</p>
+                <p className="text-gray-500 text-xs">Fees, placements & reviews</p>
+              </div>
+              <span className="ml-auto text-blue-400 text-xs font-semibold group-hover:underline">View →</span>
+            </Link>
+
+            <Link to="/mentor-apply" className="glass-card p-5 flex items-center gap-4 hover:border-saffron/30 hover:scale-[1.01] transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-saffron/10 border border-saffron/20 flex items-center justify-center text-xl flex-shrink-0">🌟</div>
+              <div>
+                <p className="text-white font-bold text-sm">Become a Mentor</p>
+                <p className="text-gray-500 text-xs">Guide the next generation</p>
+              </div>
+              <span className="ml-auto text-saffron text-xs font-semibold group-hover:underline">Apply →</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="py-20 px-4 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-saffron/[0.03] to-transparent pointer-events-none" />
+
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-3">
+              Real students. Real stories.
+            </h2>
+            <p className="text-gray-400">From confusion to confidence — one student at a time.</p>
+          </div>
+
+          {/* Testimonial carousel */}
+          <div className="relative">
+            <div className="overflow-hidden">
+              <div
+                className="flex transition-transform duration-500 ease-in-out"
+                style={{ transform: `translateX(-${activeTestimonial * 100}%)` }}
+              >
+                {testimonials.map((t, i) => (
+                  <div key={i} className="w-full flex-shrink-0 px-2">
+                    <div className={`glass-card p-10 text-center relative overflow-hidden border bg-gradient-to-br ${t.color}`}>
+                      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+
+                      <div className="text-5xl font-display text-white/20 mb-4 leading-none">"</div>
+                      <blockquote className="text-gray-200 text-lg md:text-xl leading-relaxed mb-8 font-medium text-balance">
+                        {t.quote}
+                      </blockquote>
+
+                      <div className="flex items-center justify-center gap-3">
+                        <div className="w-11 h-11 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xl">
+                          {t.avatar}
+                        </div>
+                        <div className="text-left">
+                          <div className="text-white font-semibold text-sm">{t.name}</div>
+                          <div className="text-gray-500 text-xs">{t.location}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dots */}
+            <div className="flex items-center justify-center gap-2 mt-6">
+              {testimonials.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveTestimonial(i)}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === activeTestimonial
+                      ? 'bg-saffron w-6'
+                      : 'bg-white/20 w-1.5 hover:bg-white/40'
+                  }`}
+                  aria-label={`View testimonial ${i + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+>>>>>>> sam1/main
       {/* ── FINAL CTA ── */}
       <section className="py-24 px-4">
         <div className="max-w-3xl mx-auto text-center">

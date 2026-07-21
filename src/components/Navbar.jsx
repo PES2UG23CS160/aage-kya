@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthModal from './AuthModal'
+import SearchBar from './SearchBar'
 
-export default function Navbar() {
+export default function Navbar({ onSearchOpen }) {
   const { user, profile, signOut } = useAuth()
 
   const onboardingLink = profile?.class_level === 'class10' ? '/class10/onboarding' : '/onboarding'
@@ -12,11 +13,16 @@ export default function Navbar() {
   const navLinks = [
     { to: '/',           label: 'Home' },
     { to: onboardingLink, label: 'Get Started' },
+    { to: '/career-pipeline', label: 'Careers' },
+    { to: '/competitive-exams', label: 'Exams' },
+    { to: '/scholarships', label: 'Scholarships' },
+    { to: '/study-abroad', label: 'Abroad' },
     { to: '/mentors',    label: 'Mentors' },
     { to: '/fees',       label: 'Fees' },
     { to: '/qa',         label: 'Ask a Senior' },
     { to: '/official-readiness', label: 'Readiness' },
     { to: resultLink,     label: 'My Result' },
+    { to: '/mentor-apply', label: '🌟 Become Mentor' },
   ]
   const [isOpen, setIsOpen]     = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
@@ -51,13 +57,14 @@ export default function Navbar() {
 
   const initials = user?.email?.[0]?.toUpperCase() ?? '?'
   const isMentor = profile?.role === 'mentor'
+  const isAdmin = profile?.role === 'admin'
 
   return (
     <>
       <nav
         className={`fixed top-0 left-0 right-0 z-50 font-sans transition-all duration-300 ${
           scrolled
-            ? 'bg-[#0A0F1E]/92 backdrop-blur-xl border-b border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.4)]'
+            ? 'bg-[#06080F]/92 backdrop-blur-xl border-b border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.4)]'
             : 'bg-transparent border-b border-transparent'
         }`}
       >
@@ -65,7 +72,7 @@ export default function Navbar() {
           <div className="flex items-center justify-between h-16">
 
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2.5 group">
+            <Link to="/" className="flex items-center gap-2.5 group flex-shrink-0">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-saffron to-saffron-dark flex items-center justify-center text-white font-bold text-sm font-display group-hover:scale-110 transition-transform duration-200 shadow-md">
                 AK
               </div>
@@ -75,14 +82,14 @@ export default function Navbar() {
             </Link>
 
             {/* Desktop nav links */}
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-0.5">
               {navLinks.map((link) => (
                 <NavLink
                   key={link.to}
                   to={link.to}
                   end={link.to === '/'}
                   className={({ isActive }) =>
-                    `relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    `relative px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
                       isActive
                         ? 'text-white bg-white/8'
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -102,30 +109,45 @@ export default function Navbar() {
             </div>
 
             {/* Desktop right side */}
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2">
+              {/* Ctrl+K Search Trigger */}
+              <button
+                onClick={onSearchOpen}
+                className="flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 text-gray-400 hover:text-white transition-all duration-200 text-xs"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span className="hidden lg:inline">Search</span>
+                <kbd className="hidden lg:inline text-[9px] bg-white/10 border border-white/15 px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
+              </button>
+
+              {/* Universal Search */}
+              <SearchBar isCompact />
+
               {user ? (
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                    className="flex items-center gap-2.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 transition-all duration-200"
+                    className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 transition-all duration-200"
                   >
                     {/* Avatar */}
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-saffron to-saffron-dark flex items-center justify-center text-white text-xs font-bold">
                       {initials}
                     </div>
-                    <span className="text-gray-300 text-xs max-w-[100px] truncate">{user.email}</span>
-                    <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="text-gray-300 text-xs max-w-[80px] truncate hidden lg:inline">{user.email}</span>
+                    <svg className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
 
                   {/* Dropdown */}
                   {dropdownOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-52 glass-card-solid rounded-xl border border-white/10 overflow-hidden shadow-xl animate-fade-in z-50">
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-[#0D1117] rounded-xl border border-white/10 overflow-hidden shadow-xl animate-fade-in z-50">
                       <div className="px-4 py-3 border-b border-white/5">
                         <p className="text-white text-xs font-semibold truncate">{user.email}</p>
                         <p className="text-gray-500 text-[10px] mt-0.5 capitalize">
-                          {isMentor ? '🌟 Mentor' : '🎓 Student'}
+                          {isAdmin ? '🔑 Admin' : isMentor ? '🌟 Mentor' : '🎓 Student'}
                         </p>
                       </div>
                       <div className="py-1">
@@ -139,6 +161,18 @@ export default function Navbar() {
                           </svg>
                           Dashboard
                         </Link>
+                        {isAdmin && (
+                          <Link
+                            to="/admin-dashboard"
+                            onClick={() => setDropdownOpen(false)}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                          >
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                            </svg>
+                            Admin Dashboard
+                          </Link>
+                        )}
                         {isMentor && (
                           <Link
                             to="/mentor-dashboard"
@@ -205,6 +239,11 @@ export default function Navbar() {
           {/* Mobile menu */}
           {isOpen && (
             <div className="md:hidden pb-4 border-t border-white/5 mt-2 pt-4 space-y-1 animate-fade-in">
+              {/* Mobile Search */}
+              <div className="mb-3 px-1">
+                <SearchBar isCompact={false} />
+              </div>
+
               {navLinks.map((link) => (
                 <NavLink
                   key={link.to}
@@ -228,6 +267,11 @@ export default function Navbar() {
                     <Link to="/dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
                       Dashboard
                     </Link>
+                    {isAdmin && (
+                      <Link to="/admin-dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
+                        Admin Dashboard
+                      </Link>
+                    )}
                     {isMentor && (
                       <Link to="/mentor-dashboard" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:text-white hover:bg-white/5">
                         Mentor Dashboard

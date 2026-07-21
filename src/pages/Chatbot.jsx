@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { apiUrl } from '../api'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Quick question chips ─────────────────────────────────────────────────────
 
@@ -88,6 +89,7 @@ function TypingIndicator() {
 // ─── Main Chatbot page ────────────────────────────────────────────────────────
 
 export default function Chatbot() {
+  const { profile } = useAuth()
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -98,6 +100,7 @@ export default function Chatbot() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [quickQuestions, setQuickQuestions] = useState(QUICK_QUESTIONS)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -105,6 +108,38 @@ export default function Chatbot() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Dynamically update quickQuestions based on student profile
+  useEffect(() => {
+    if (profile) {
+      const q = []
+      if (profile.class_level === 'class10') {
+        q.push(`I am in Class 10. Recommend streams & courses based on my profile.`)
+        q.push(`What streams are best if I got ${profile.marks || 'good'} marks?`)
+        if (profile.state) {
+          q.push(`What are the best colleges in ${profile.state} after Class 10?`)
+        }
+        q.push(`Tell me about scholarships for 10th students.`)
+      } else if (profile.class_level === 'class12') {
+        const streamStr = profile.stream ? ` (${profile.stream})` : ''
+        q.push(`What are the best career paths after Class 12${streamStr}?`)
+        if (profile.stream) {
+          q.push(`Which entrance exams should I write for 12th ${profile.stream}?`)
+        } else {
+          q.push(`What is the difference between JEE and NEET?`)
+        }
+        if (profile.state) {
+          q.push(`Recommend colleges in ${profile.state} for Class 12 students.`)
+        }
+        q.push(`What scholarships can a 12th student apply for?`)
+      } else {
+        q.push('What is the best way to prepare for competitive exams?')
+        q.push('How can I apply to study abroad?')
+        q.push('How can I get matched with a mentor?')
+      }
+      setQuickQuestions(q)
+    }
+  }, [profile])
 
   const sendMessage = async (text) => {
     const userText = (text || input).trim()
@@ -128,7 +163,7 @@ export default function Chatbot() {
       const res = await fetch(apiUrl('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: contextWindow }),
+        body: JSON.stringify({ messages: contextWindow, profile }),
       })
 
       if (!res.ok) {
@@ -205,7 +240,7 @@ export default function Chatbot() {
             <div className="pt-2 animate-fade-in">
               <p className="text-gray-600 text-xs mb-3 text-center">Or try a quick question:</p>
               <div className="flex flex-wrap gap-2 justify-center">
-                {QUICK_QUESTIONS.map((q, i) => (
+                {quickQuestions.map((q, i) => (
                   <button
                     key={i}
                     onClick={() => sendMessage(q)}

@@ -8,7 +8,9 @@ export default {
     extend: {
       colors: {
         navy: {
-          DEFAULT: '#0A0F1E',
+          DEFAULT: '#06080F',
+          950: '#06080F',
+          900: '#0A0F1E',
           800: '#111827',
           700: '#1F2937',
           600: '#374151',
@@ -40,6 +42,11 @@ export default {
         'spin-slow': 'spin 20s linear infinite',
         'bounce-subtle': 'bounceSuibtle 2s ease-in-out infinite',
         'scale-in': 'scaleIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'card-reveal': 'cardReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'slide-left': 'slideLeft 0.5s ease-out forwards',
+        'slide-right': 'slideRight 0.5s ease-out forwards',
+        'glow-pulse': 'glowPulse 3s ease-in-out infinite',
+        'border-flow': 'borderFlow 4s linear infinite',
       },
       keyframes: {
         fadeIn: {
@@ -74,6 +81,26 @@ export default {
           '0%': { opacity: '0', transform: 'scale(0.95)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        cardReveal: {
+          '0%': { opacity: '0', transform: 'translateY(30px) scale(0.96)', filter: 'blur(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)', filter: 'blur(0)' },
+        },
+        slideLeft: {
+          '0%': { opacity: '0', transform: 'translateX(30px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        slideRight: {
+          '0%': { opacity: '0', transform: 'translateX(-30px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        glowPulse: {
+          '0%, 100%': { opacity: '0.4' },
+          '50%': { opacity: '0.8' },
+        },
+        borderFlow: {
+          '0%': { backgroundPosition: '0% 50%' },
+          '100%': { backgroundPosition: '200% 50%' },
+        },
       },
       backdropBlur: {
         xs: '2px',
@@ -83,6 +110,10 @@ export default {
         'saffron-lg': '0 0 60px rgba(255, 107, 0, 0.4)',
         'glass': '0 8px 32px rgba(0, 0, 0, 0.37)',
         'card': '0 4px 24px rgba(0, 0, 0, 0.3)',
+        'elevated': '0 20px 60px rgba(0, 0, 0, 0.5)',
+        'glow-saffron': '0 0 40px rgba(255,107,0,0.15)',
+        'glow-purple': '0 0 40px rgba(139,92,246,0.15)',
+        'glow-blue': '0 0 40px rgba(59,130,246,0.15)',
       },
     },
   },
