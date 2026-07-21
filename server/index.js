@@ -172,6 +172,10 @@ async function persistRecommendationAudit({ orchestration, inputFingerprint, stu
 
   const { error: runError } = await supabaseAdmin.from('recommendation_runs').insert(recommendationRow)
   if (runError) {
+    if (runError.code === '42P01' || runError.message?.includes('does not exist') || runError.message?.includes('schema cache')) {
+      console.warn('⚠️  recommendation_runs table is missing from Supabase. Skipping audit log persist.')
+      return false
+    }
     throw datastoreError('Recommendation audit write', runError)
   }
 
@@ -187,6 +191,10 @@ async function persistRecommendationAudit({ orchestration, inputFingerprint, stu
   }))
   const { error: agentError } = await supabaseAdmin.from('agent_runs').insert(agentRows)
   if (agentError) {
+    if (agentError.code === '42P01' || agentError.message?.includes('does not exist') || agentError.message?.includes('schema cache')) {
+      console.warn('⚠️  agent_runs table is missing from Supabase. Skipping agent audit log persist.')
+      return false
+    }
     throw datastoreError('Agent audit write', agentError)
   }
   return true
@@ -325,6 +333,31 @@ async function resilientUpsertStudent(client, studentData) {
   } else if (error) {
     throw error
   }
+}
+
+// Resilient guidance result insert (prunes missing columns dynamically)
+async function resilientInsertGuidanceResult(admin, data) {
+  const { error } = await admin.from('guidance_results').insert(data)
+  if (error && (error.code === '42703' || error.message?.includes('column'))) {
+    // Falls back to legacy columns if new columns (from 202607200002_guidance_trace_cache.sql) are missing
+    const allowedKeys = [
+      'student_id', 'summary', 'options', 'scholarship_to_check',
+      'one_thing_to_do_this_week', 'confidence_score', 'confidence_label',
+      'confidence_reason', 'parent_summary', 'scholarships_list',
+      'created_at'
+    ]
+    const prunedData = {}
+    for (const key of allowedKeys) {
+      if (data[key] !== undefined) {
+        prunedData[key] = data[key]
+      }
+    }
+    const { error: retryError } = await admin.from('guidance_results').insert(prunedData)
+    return { error: retryError }
+  } else if (error) {
+    return { error }
+  }
+  return { error: null }
 }
 
 // Retrieve authenticated user from Supabase token; also fetches role from students table
@@ -1729,7 +1762,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
       // Evidence and trace columns are server-managed. The corresponding RLS
       // policy intentionally gives students read access only.
       const admin = requireSupabaseAdmin('Guidance result write')
-      const { error: guidanceWriteError } = await admin.from('guidance_results').insert({
+      const { error: guidanceWriteError } = await resilientInsertGuidanceResult(admin, {
         student_id: user.id,
         summary: agentResult.summary,
         options: agentResult.options,
@@ -1748,6 +1781,7 @@ app.post('/api/guidance', validateGuidanceBody, guidanceLimiter, async (req, res
         decision_context: mockOrchestration.context,
       })
       if (guidanceWriteError) throw datastoreError('Guidance result write', guidanceWriteError)
+
       // Notify only after every required persistence write succeeds.
       await sendEmail(
         user.email,
@@ -2128,16 +2162,24 @@ app.get('/api/mentors', async (req, res) => {
       return res.json([])
     }
 
-    const { data, error } = await supabase
+    let result = await supabase
       .from('mentors')
       .select('*')
       .eq('available', true)
       .not('verified_at', 'is', null)
       .order('created_at', { ascending: false })
 
-    if (error) throw error
+    if (result.error && (result.error.code === '42703' || result.error.message?.includes('verified_at'))) {
+      result = await supabase
+        .from('mentors')
+        .select('*')
+        .eq('available', true)
+        .order('created_at', { ascending: false })
+    }
 
-    res.json(data || [])
+    if (result.error) throw result.error
+
+    res.json(result.data || [])
   } catch (err) {
     console.error('Mentors API error:', err.message)
     res.status(503).json({ error: 'MENTORS_UNAVAILABLE', message: 'Mentor listings are temporarily unavailable.' })
