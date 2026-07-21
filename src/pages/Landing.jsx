@@ -58,6 +58,30 @@ const steps = [
   },
 ]
 
+const testimonials = [
+  {
+    quote: 'I had 72% in boards and had no idea what to do. Aage Kya showed me options I never knew existed.',
+    name: 'Divya R.',
+    location: 'Nagpur, Maharashtra • Now at VNIT',
+    avatar: '👩‍🎓',
+    color: 'from-purple-500/20 to-purple-600/5 border-purple-500/20',
+  },
+  {
+    quote: 'My parents wanted CA. Aage Kya helped me figure out BBA Finance was actually a better fit for me.',
+    name: 'Karan S.',
+    location: 'Jaipur, Rajasthan • BBA at Christ University',
+    avatar: '👨‍💼',
+    color: 'from-blue-500/20 to-blue-600/5 border-blue-500/20',
+  },
+  {
+    quote: 'First gen college student. Had zero guidance. This tool was like having a elder sibling who\'d been there.',
+    name: 'Preethi M.',
+    location: 'Coimbatore, Tamil Nadu • Now at PSG Tech',
+    avatar: '👩‍💻',
+    color: 'from-saffron/20 to-saffron/5 border-saffron/20',
+  },
+]
+
 // ── Components ────────────────────────────────────────────────────────────────
 
 function useCounter(target, duration = 1400, start = false) {
@@ -173,6 +197,14 @@ function FeatureCard({ feature, index }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function Landing() {
+  const [activeTestimonial, setActiveTestimonial] = useState(0)
+
+  // Auto-rotate testimonials
+  useEffect(() => {
+    const t = setInterval(() => setActiveTestimonial(i => (i + 1) % testimonials.length), 4000)
+    return () => clearInterval(t)
+  }, [])
+
   return (
     <main className="pt-16 overflow-x-hidden">
 
@@ -578,7 +610,6 @@ export default function Landing() {
         </div>
       </section>
 
->>>>>>> sam1/main
       {/* ── FINAL CTA ── */}
       <section className="py-24 px-4">
         <div className="max-w-3xl mx-auto text-center">
