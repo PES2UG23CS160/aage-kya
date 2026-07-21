@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { apiUrl } from '../api'
 
-const API = apiUrl()
+const API = 'http://localhost:5000'
 const STREAMS = ['All', 'Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities', 'Class 10 / Stream Selection']
 
 function PostCard({ post }) {
@@ -111,7 +111,7 @@ function AskForm({ session, onPosted }) {
 }
 
 export default function QABoard() {
-  const { session, loading: authLoading } = useAuth()
+  const { user, session, loading: authLoading } = useAuth()
 
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -129,9 +129,7 @@ export default function QABoard() {
       const newPosts = data.posts || []
       setPosts(prev => replace ? newPosts : [...prev, ...newPosts])
       setHasMore(newPosts.length === 20)
-    } catch (err) {
-      console.error('Failed to load Q&A posts:', err)
-    }
+    } catch { }
     finally { setLoading(false) }
   }, [])
 

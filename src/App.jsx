@@ -17,8 +17,6 @@ import OfficialReadiness from './pages/OfficialReadiness'
 import Scenarios from './pages/Scenarios'
 import QABoard from './pages/QABoard'
 import Chatbot from './pages/Chatbot'
-import FeeExplorer from './pages/FeeExplorer'
-import ResetPassword from './pages/ResetPassword'
 import GlobalSearch from './components/GlobalSearch'
 
 // New pages
@@ -99,8 +97,6 @@ function AnimatedRoutes() {
         <Route path="/official-readiness" element={<OfficialReadiness />} />
         <Route path="/qa"                element={<QABoard />} />
         <Route path="/chat"              element={<Chatbot />} />
-        <Route path="/fees"              element={<FeeExplorer />} />
-        <Route path="/auth/reset-password" element={<ResetPassword />} />
 
         {/* New Public Routes */}
         <Route path="/competitive-exams" element={<CompetitiveExams />} />

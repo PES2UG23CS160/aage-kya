@@ -7,7 +7,7 @@ import SearchBar from './SearchBar'
 export default function Navbar({ onSearchOpen }) {
   const { user, profile, signOut } = useAuth()
 
-  const onboardingLink = profile?.class_level === 'class10' ? '/class10/onboarding' : '/onboarding'
+  const onboardingLink = '/onboarding'
   const resultLink = profile?.class_level === 'class10' ? '/class10/result' : '/result'
 
   const navLinks = [
@@ -18,10 +18,6 @@ export default function Navbar({ onSearchOpen }) {
     { to: '/scholarships', label: 'Scholarships' },
     { to: '/study-abroad', label: 'Abroad' },
     { to: '/mentors',    label: 'Mentors' },
-    { to: '/fees',       label: 'Fees' },
-    { to: '/qa',         label: 'Ask a Senior' },
-    { to: '/official-readiness', label: 'Readiness' },
-    { to: resultLink,     label: 'My Result' },
     { to: '/mentor-apply', label: '🌟 Become Mentor' },
   ]
   const [isOpen, setIsOpen]     = useState(false)

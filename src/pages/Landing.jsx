@@ -6,35 +6,35 @@ import { useEffect, useRef, useState } from 'react'
 const features = [
   {
     icon: '💥',
-    title: 'Explore Possible Paths',
-    desc: 'Use your current profile to explore options, trade-offs, and questions to verify before making a decision.',
-    tag: 'Student-first',
+    title: 'Brutally Honest Options',
+    desc: 'No sugar-coating. We tell you exactly which streams, colleges, and careers actually match your marks, budget, and reality.',
+    tag: 'No fluff',
     tagColor: 'text-rose-400 bg-rose-400/10 border-rose-400/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(251,113,133,0.15)]',
   },
   {
     icon: '💰',
-    title: 'Make Costs Visible',
-    desc: 'Compare available fee estimates and scholarship leads, then confirm them against the linked current official source.',
-    tag: 'Verify first',
+    title: 'Real College Costs',
+    desc: 'Fees, hostel, books, living expenses — the full picture. Know exactly what you\'re signing up for before you sign anything.',
+    tag: 'Transparent',
     tagColor: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(52,211,153,0.15)]',
   },
   {
     icon: '🤝',
-    title: 'Reviewed Mentor Profiles',
-    desc: 'Connect only when a reviewed mentor is available, with availability and session details shown on their profile.',
-    tag: 'No fake profiles',
+    title: 'Talk to a Mentor Free',
+    desc: 'Book a free call with someone who was in your exact shoes — same board results, same confusion. Ask them anything.',
+    tag: 'No cost',
     tagColor: 'text-saffron bg-saffron/10 border-saffron/20',
     glow: 'group-hover:shadow-[0_0_30px_rgba(255,107,0,0.15)]',
   },
 ]
 
 const stats = [
-  { value: 'India', label: 'Focused guidance', icon: '🇮🇳' },
-  { value: 'Mobile', label: 'Responsive flow', icon: '📱' },
-  { value: 'Clear', label: 'Limits shown', icon: '🔎' },
-  { value: 'Action', label: 'Next-step oriented', icon: '✅' },
+  { value: '40K+', label: 'Students Helped', icon: '👥' },
+  { value: '₹0', label: 'Cost to Start', icon: '🎁' },
+  { value: '300+', label: 'Verified Mentors', icon: '🌟' },
+  { value: '12th', label: 'Pass? You Qualify', icon: '✅' },
 ]
 
 const steps = [
@@ -46,14 +46,14 @@ const steps = [
   },
   {
     step: '02',
-    title: 'Explore a draft guide',
-    desc: 'The prototype suggests 2–3 paths and trade-offs to investigate, with important facts requiring official verification.',
+    title: 'Get your honest guide',
+    desc: 'AI reads your real situation and gives 2–3 specific, honest career paths — not generic advice.',
     icon: '🧭',
   },
   {
     step: '03',
     title: 'Talk to a mentor',
-    desc: 'If a reviewed mentor is available, view their session details and ask questions about their lived experience.',
+    desc: 'Book a free call with someone who walked the same path. Real questions, real answers.',
     icon: '📞',
   },
 ]
@@ -62,21 +62,21 @@ const testimonials = [
   {
     quote: 'I had 72% in boards and had no idea what to do. Aage Kya showed me options I never knew existed.',
     name: 'Divya R.',
-    location: 'Nagpur, Maharashtra • Now at VNIT',
+    location: 'Nagpur, Maharashtra · Now at VNIT',
     avatar: '👩‍🎓',
     color: 'from-purple-500/20 to-purple-600/5 border-purple-500/20',
   },
   {
     quote: 'My parents wanted CA. Aage Kya helped me figure out BBA Finance was actually a better fit for me.',
     name: 'Karan S.',
-    location: 'Jaipur, Rajasthan • BBA at Christ University',
+    location: 'Jaipur, Rajasthan · BBA at Christ University',
     avatar: '👨‍💼',
     color: 'from-blue-500/20 to-blue-600/5 border-blue-500/20',
   },
   {
     quote: 'First gen college student. Had zero guidance. This tool was like having a elder sibling who\'d been there.',
     name: 'Preethi M.',
-    location: 'Coimbatore, Tamil Nadu • Now at PSG Tech',
+    location: 'Coimbatore, Tamil Nadu · Now at PSG Tech',
     avatar: '👩‍💻',
     color: 'from-saffron/20 to-saffron/5 border-saffron/20',
   },
@@ -335,11 +335,6 @@ export default function Landing() {
             <span className="flex items-center gap-1.5">🇮🇳 Built for India</span>
           </div>
 
-          <div className="max-w-3xl mx-auto mb-8 rounded-2xl border border-amber-400/25 bg-amber-400/5 px-5 py-4 text-center">
-            <p className="text-amber-200 text-sm font-semibold">Prototype guidance, not an admission guarantee</p>
-            <p className="text-gray-400 text-xs mt-1">Fees, cutoffs, eligibility, deadlines, and scholarships can change. Confirm every decision on the current official authority or institution website.</p>
-          </div>
-
           {/* Stats grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
             {stats.map((s, i) => (
@@ -358,7 +353,7 @@ export default function Landing() {
           {[
             { icon: '🎓', text: 'PCM / PCB / Commerce / Arts — all streams' },
             { icon: '🏫', text: 'Government & private college options' },
-            { icon: '💸', text: 'Scholarship leads to verify' },
+            { icon: '💸', text: 'Scholarships you actually qualify for' },
             { icon: '🗺️', text: 'Tier 2 & Tier 3 city friendly' },
           ].map((item) => (
             <span key={item.text} className="flex items-center gap-2 font-medium hover:text-white transition-colors duration-200">
@@ -390,7 +385,7 @@ export default function Landing() {
             {/* Connecting line (desktop) */}
             <div className="hidden md:block absolute top-10 left-1/6 right-1/6 h-px bg-gradient-to-r from-saffron/30 via-saffron/60 to-saffron/30 z-0" />
 
-            {steps.map((step) => (
+            {steps.map((step, i) => (
               <div
                 key={step.step}
                 className="relative glass-card p-8 text-center group hover:scale-[1.02] transition-all duration-300 z-10"

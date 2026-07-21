@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { getCourseReality } from '../data/courseReality'
-import { apiUrl } from '../api'
 
 // ─── YouTube embed card ───────────────────────────────────────────────────────
 
@@ -84,7 +83,7 @@ function StudentFeedback({ streamKey }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch(apiUrl(`/api/course-feedback?stream=${encodeURIComponent(streamKey)}`), {
+    fetch(`http://localhost:5000/api/course-feedback?stream=${encodeURIComponent(streamKey)}`, {
       signal: controller.signal,
     })
       .then(r => r.ok ? r.json() : { feedback: [] })
@@ -303,10 +302,7 @@ export default function CourseReality({ streamKey, compact = false }) {
               </div>
             )}
 
-            <div className="mt-6 pt-6 border-t border-white/8">
-              <p className="text-gray-300 text-xs font-bold uppercase tracking-wider mb-3">Reviewed student feedback</p>
-              <StudentFeedback streamKey={streamKey} />
-            </div>
+
 
           </div>
         </div>

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import { apiUrl } from '../api'
 
 export default function Dashboard() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
@@ -58,7 +57,7 @@ export default function Dashboard() {
           const streamToMatch = student.stream || 'Class 10 / Stream Selection'
           const classLevel = student.class_level || 'class12'
 
-          const res = await fetch(apiUrl('/api/mentors'))
+          const res = await fetch('http://localhost:5000/api/mentors')
           if (res.ok) {
             const mentors = await res.json()
             const match = mentors.find(m => {
@@ -101,7 +100,7 @@ export default function Dashboard() {
     setReOnboarding(true)
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(apiUrl('/api/re-onboard'), {
+      const res = await fetch('http://localhost:5000/api/re-onboard', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,7 +133,7 @@ export default function Dashboard() {
       const token = (await supabase.auth.getSession()).data.session?.access_token
       
       // Step 1: Archive current report first
-      await fetch(apiUrl('/api/re-onboard'), {
+      await fetch('http://localhost:5000/api/re-onboard', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -249,7 +248,7 @@ export default function Dashboard() {
       }
 
       const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(apiUrl('/api/wallet'), {
+      const res = await fetch('http://localhost:5000/api/wallet', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -275,7 +274,7 @@ export default function Dashboard() {
     try {
       const updatedWallet = wallet.filter(w => w.id !== id)
       const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(apiUrl('/api/wallet'), {
+      const res = await fetch('http://localhost:5000/api/wallet', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

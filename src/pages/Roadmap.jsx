@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useLocation, Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
-import { apiUrl } from '../api'
 import {
   Spinner,
   NoApiKey,
@@ -9,31 +8,16 @@ import {
   ProfileStrip,
 } from './Result'
 
-const PENDING_ROADMAP_KEY = 'aageKyaPendingRoadmap'
-const PENDING_ROADMAP_MAX_AGE_MS = 24 * 60 * 60 * 1000
-
-function readPendingRoadmap() {
-  try {
-    const saved = localStorage.getItem(PENDING_ROADMAP_KEY)
-    if (!saved) return null
-    const pending = JSON.parse(saved)
-    const isFresh = Number.isFinite(pending?.createdAt) && Date.now() - pending.createdAt < PENDING_ROADMAP_MAX_AGE_MS
-    return pending?.option && isFresh ? pending : null
-  } catch {
-    return null
-  }
-}
-
 // ─── Backend API call ─────────────────────────────────────────────────────────
 
-async function requestRoadmap(form, option) {
+async function callGeminiRoadmap(form, option) {
   const { data: { session } } = await supabase.auth.getSession()
   const headers = { 'Content-Type': 'application/json' }
   if (session) {
     headers['Authorization'] = `Bearer ${session.access_token}`
   }
 
-  const res = await fetch(apiUrl('/api/roadmap'), {
+  const res = await fetch('http://localhost:5000/api/roadmap', {
     method: 'POST',
     headers,
     body: JSON.stringify({ formData: form, option }),
@@ -55,18 +39,14 @@ async function requestRoadmap(form, option) {
 
 export default function Roadmap() {
   const { classLevel = 'class12' } = useParams()
-  const location = useLocation()
-  const { state } = location
-  const pendingRoadmap = useMemo(readPendingRoadmap, [])
+  const { state } = useLocation()
   
   // Try reading from Router state; fallback to localStorage
-  const formData = useMemo(() => {
-    const savedFormRaw = localStorage.getItem('aageKyaFormData')
-    const rawForm = state?.formData ?? pendingRoadmap?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
-    return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
-  }, [classLevel, pendingRoadmap, state?.formData])
+  const savedFormRaw = localStorage.getItem('aageKyaFormData')
+  const rawForm = state?.formData ?? (savedFormRaw ? JSON.parse(savedFormRaw) : null)
+  const formData = rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
   
-  const selectedOption = state?.option ?? pendingRoadmap?.option
+  const selectedOption = state?.option
 
   const [session, setSession] = useState(null)
   const [sessionLoading, setSessionLoading] = useState(true)
@@ -121,21 +101,10 @@ export default function Roadmap() {
     setAuthSuccess(false)
 
     try {
-      if (selectedOption) {
-        localStorage.setItem(PENDING_ROADMAP_KEY, JSON.stringify({
-          option: selectedOption,
-          formData,
-          returnPath: location.pathname,
-          createdAt: Date.now(),
-        }))
-      }
-
-      const allowedRedirectPaths = new Set(['/roadmap', '/class10/roadmap', '/class12/roadmap'])
-      const redirectPath = allowedRedirectPaths.has(location.pathname) ? location.pathname : '/roadmap'
       const { error } = await supabase.auth.signInWithOtp({
-        email: authEmail.trim(),
+        email: authEmail,
         options: {
-          emailRedirectTo: new URL(redirectPath, window.location.origin).toString(),
+          emailRedirectTo: window.location.origin + '/roadmap', // redirects directly back here
         },
       })
 
@@ -162,7 +131,6 @@ export default function Roadmap() {
         setRoadmap(cached.roadmapData)
         setOptionName(cached.optionPath)
         setStatus('success')
-        localStorage.removeItem(PENDING_ROADMAP_KEY)
         return
       }
     }
@@ -175,7 +143,7 @@ export default function Roadmap() {
     setErrMsg('')
     
     try {
-      const data = await requestRoadmap(formData, selectedOption)
+      const data = await callGeminiRoadmap(formData, selectedOption)
       setRoadmap(data)
       setOptionName(selectedOption.path)
       
@@ -189,7 +157,6 @@ export default function Roadmap() {
         })
       )
       setStatus('success')
-      localStorage.removeItem(PENDING_ROADMAP_KEY)
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         setStatus('no_key')

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getScholarships } from '../api'
 
 const CATEGORIES = [
   { id: 'after10', label: 'After 10th', icon: '📗', color: 'tag-emerald' },
@@ -130,33 +129,6 @@ export default function Scholarships() {
   const [activeCategory, setActiveCategory] = useState('after12')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedType, setSelectedType] = useState('all')
-  const [scholarshipsList, setScholarshipsList] = useState(SCHOLARSHIPS)
-
-  useEffect(() => {
-    getScholarships()
-      .then(res => res.ok ? res.json() : [])
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          const dbMapped = data.map((s, idx) => ({
-            id: s.id || `db-${idx}`,
-            name: s.name,
-            category: s.eligible_streams?.includes('All') ? activeCategory : (s.eligible_streams?.includes('Science (PCM)') ? 'after12' : 'undergraduate'),
-            amount: s.description.match(/₹[\d,–\s]+(?:lakh|lakhs|year|month|one-time)?/i)?.[0] || 'Tuition / Stipend support',
-            eligibility: s.description,
-            deadline: s.deadline_pattern || 'See portal',
-            link: s.application_url || '#',
-            tags: [
-              ...(s.eligible_states?.includes('All') ? ['National'] : s.eligible_states || []),
-              s.eligibility_income_max_lakh < 10 ? 'Need-Based' : 'Merit-Based',
-              'Verified DB'
-            ]
-          }))
-          // Merge with built-in list to provide rich categorized listing
-          setScholarshipsList([...SCHOLARSHIPS, ...dbMapped])
-        }
-      })
-      .catch(() => {})
-  }, [])
   
   // Load tracked scholarships from localStorage on mount/user change
   const [applicationStatus, setApplicationStatus] = useState(() => {
@@ -182,7 +154,7 @@ export default function Scholarships() {
     }
   }, [profile])
 
-  const filtered = scholarshipsList.filter(s => {
+  const filtered = SCHOLARSHIPS.filter(s => {
     const matchesCategory = s.category === activeCategory
     const matchesSearch = searchQuery
       ? s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

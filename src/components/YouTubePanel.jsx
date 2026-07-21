@@ -3,26 +3,187 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 // Curated YouTube videos by topic (no API key needed)
 const CURATED_VIDEOS = {
+  // --- SOFTWARE ENGINEER ---
+  software_engineer_current: [
+    { id: 'ysEN5RaKOlA', title: 'How to Start Programming & Career Guidance', channel: 'CodeWithHarry' },
+    { id: 'jL6kZ6J3x9w', title: 'How to Start Coding & Get a Job in College', channel: 'Apna College' },
+    { id: 'UXZRf2QF2jE', title: 'IIT vs Private College for CS - Reality Check', channel: 'Apni Kaksha' },
+  ],
+  software_engineer_education: [
+    { id: 'reh7_JwfgWc', title: 'Software Engineering Career Guide & Degrees', channel: 'Fireship' },
+    { id: 'UXZRf2QF2jE', title: 'IIT vs Private College for CS - Reality Check', channel: 'Apni Kaksha' },
+  ],
+  software_engineer_entrance: [
+    { id: 'nKW8Ndu7Mjw', title: 'JEE Main Preparation Plan & Strategies', channel: 'Physics Wallah' },
+    { id: 'rBrUxO-dFf4', title: 'IIT vs NIT - Which is Better?', channel: 'Apni Kaksha' },
+    { id: 'jNQXAC9IVRw', title: 'KCET Preparation Strategy & Syllabus', channel: 'Karnataka Exams' },
+  ],
+  software_engineer_college: [
+    { id: 'gN4r536-j8Q', title: 'Web Development Roadmap with GenAI', channel: 'Chai aur Code' },
+    { id: 'ysEN5RaKOlA', title: 'How to Learn DSA & Projects in College', channel: 'CodeWithHarry' },
+    { id: 'cM4y_qF_z5Y', title: 'Roadmap to Get Paid Internships in College', channel: 'Love Babbar' },
+  ],
+  software_engineer_internship: [
+    { id: 'cM4y_qF_z5Y', title: 'Follow THIS Roadmap to Get Paid Internships', channel: 'Love Babbar' },
+    { id: 'reh7_JwfgWc', title: 'Software Engineering Resume Tips', channel: 'Fireship' },
+  ],
+  software_engineer_first_job: [
+    { id: 'jL6kZ6J3x9w', title: 'How to Prepare for Coding Placement Exams', channel: 'Apna College' },
+    { id: 'cM4y_qF_z5Y', title: 'Job Search Strategy & Mock Interviews', channel: 'Love Babbar' },
+  ],
+  software_engineer_mid_career: [
+    { id: 'reh7_JwfgWc', title: 'Mid-Level to Senior Software Engineer Transition', channel: 'Fireship' },
+    { id: 'UXZRf2QF2jE', title: 'System Design Basics for Scale', channel: 'Apni Kaksha' },
+  ],
+  software_engineer_senior: [
+    { id: 'reh7_JwfgWc', title: 'What does a Staff Engineer or CTO do?', channel: 'Fireship' },
+    { id: 'UXZRf2QF2jE', title: 'Engineering Management & Leadership', channel: 'Apni Kaksha' },
+  ],
   software_engineer: [
     { id: 'ysEN5RaKOlA', title: 'How to Become a Software Engineer in India', channel: 'CodeWithHarry' },
     { id: 'reh7_JwfgWc', title: 'Software Engineering Career Guide 2024', channel: 'Fireship' },
     { id: 'UXZRf2QF2jE', title: 'IIT vs Private College for CS - Reality Check', channel: 'Apni Kaksha' },
+  ],
+
+  // --- DATA SCIENTIST ---
+  data_scientist_current: [
+    { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
+    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+  ],
+  data_scientist_education: [
+    { id: 'ua-CiDNNj30', title: 'Data Science Degrees & Skill Roadmap', channel: 'Krish Naik' },
+    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+  ],
+  data_scientist_entrance: [
+    { id: 'nKW8Ndu7Mjw', title: 'JEE Main Preparation Plan 2024', channel: 'Physics Wallah' },
+    { id: 'rBrUxO-dFf4', title: 'IIT vs NIT - Which is Better?', channel: 'Apni Kaksha' },
+  ],
+  data_scientist_college: [
+    { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
+    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+  ],
+  data_scientist_internship: [
+    { id: 'ua-CiDNNj30', title: 'How to Get a Data Science Internship', channel: 'Krish Naik' },
+  ],
+  data_scientist_first_job: [
+    { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
+    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+  ],
+  data_scientist_mid_career: [
+    { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
+  ],
+  data_scientist_senior: [
+    { id: 'aircAruvnKk', title: 'AI Research & MLOps at Scale', channel: '3Blue1Brown' },
   ],
   data_scientist: [
     { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
     { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
     { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
+
+  // --- DOCTOR ---
+  doctor_current: [
+    { id: 'UBKtl3A-8jQ', title: 'NEET Preparation Strategy 2024', channel: 'Physics Wallah' },
+  ],
+  doctor_entrance: [
+    { id: 'UBKtl3A-8jQ', title: 'NEET Preparation Strategy 2024', channel: 'Physics Wallah' },
+    { id: 'dQw4w9WgXcQ', title: 'Medical College Admission Guide', channel: 'NEET Pathshala' },
+  ],
+  doctor_college: [
+    { id: 'oHg5SJYRHA0', title: 'MBBS Life in India - Reality', channel: 'Doctors Academy' },
+  ],
+  doctor_pg: [
+    { id: 'dpTFQSL9B9M', title: 'NEET PG Specialization vs MD/MS', channel: 'MedPrep' },
+  ],
+  doctor_first_job: [
+    { id: 'oHg5SJYRHA0', title: 'MBBS Life in India - Reality', channel: 'Doctors Academy' },
+  ],
+  doctor_senior: [
+    { id: 'oHg5SJYRHA0', title: 'MBBS Life in India - Reality', channel: 'Doctors Academy' },
+  ],
   doctor: [
     { id: 'UBKtl3A-8jQ', title: 'NEET Preparation Strategy 2024', channel: 'Physics Wallah' },
     { id: 'oHg5SJYRHA0', title: 'MBBS Life in India - Reality', channel: 'Doctors Academy' },
     { id: 'dQw4w9WgXcQ', title: 'Medical College Admission Guide', channel: 'NEET Pathshala' },
+  ],
+
+  // --- CA ---
+  ca_current: [
+    { id: 'VYOjWnS4cMY', title: 'CA Journey - Foundation to Final', channel: 'ICAI Official' },
+  ],
+  ca_foundation: [
+    { id: 'dpTFQSL9B9M', title: 'CA Foundation Prep Strategy', channel: 'CA Wallah' },
+  ],
+  ca_intermediate: [
+    { id: 'mDAzLDMEDoY', title: 'CA Intermediate Preparation Guide', channel: 'CA Exam Portal' },
+  ],
+  ca_articleship: [
+    { id: 'mDAzLDMEDoY', title: 'Big 4 vs Industry vs Practice - CA Guide', channel: 'CA Exam Portal' },
+  ],
+  ca_final: [
+    { id: 'VYOjWnS4cMY', title: 'CA Journey - Foundation to Final', channel: 'ICAI Official' },
+  ],
+  ca_first_job: [
+    { id: 'dpTFQSL9B9M', title: 'Chartered Accountant Salary & Career', channel: 'CA Wallah' },
+  ],
+  ca_senior: [
+    { id: 'dpTFQSL9B9M', title: 'Chartered Accountant Salary & Career', channel: 'CA Wallah' },
   ],
   ca: [
     { id: 'VYOjWnS4cMY', title: 'CA Journey - Foundation to Final', channel: 'ICAI Official' },
     { id: 'dpTFQSL9B9M', title: 'Chartered Accountant Salary & Career', channel: 'CA Wallah' },
     { id: 'mDAzLDMEDoY', title: 'Big 4 vs Industry vs Practice - CA Guide', channel: 'CA Exam Portal' },
   ],
+
+  // --- DESIGNER ---
+  designer_current: [
+    { id: 'p323FK_ANic', title: 'How to Become a UX Designer for Beginners', channel: 'Ansh Mehra' },
+  ],
+  designer_education: [
+    { id: 'k1uH3RlRNag', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
+  ],
+  designer_internship: [
+    { id: 'p323FK_ANic', title: 'How to Build UI/UX Design Portfolio', channel: 'Ansh Mehra' },
+  ],
+  designer_first_job: [
+    { id: 'p323FK_ANic', title: 'Getting your first UI/UX Job & Interviews', channel: 'Ansh Mehra' },
+  ],
+  designer_mid_career: [
+    { id: 'k1uH3RlRNag', title: 'Advanced UX Methods & Systems', channel: 'Simplilearn' },
+  ],
+  designer_senior: [
+    { id: 'p323FK_ANic', title: 'Leadership in Design & AI Tools', channel: 'Ansh Mehra' },
+  ],
+  designer: [
+    { id: 'p323FK_ANic', title: 'How to Become a UX Designer with Full Roadmap for Beginners', channel: 'Ansh Mehra' },
+    { id: 'k1uH3RlRNag', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
+  ],
+
+  // --- CIVIL SERVICES ---
+  civil_services_current: [
+    { id: 'UBKtl3A-8jQ', title: 'UPSC Civil Services Guide for Beginners', channel: 'Physics Wallah' },
+  ],
+  civil_services_education: [
+    { id: 'dpTFQSL9B9M', title: 'UPSC IAS Graduation & Subject Choice Strategy', channel: 'MedPrep' },
+  ],
+  civil_services_preparation: [
+    { id: 'UBKtl3A-8jQ', title: 'UPSC Civil Services Syllabus & Strategy', channel: 'Physics Wallah' },
+  ],
+  civil_services_exam: [
+    { id: 'dpTFQSL9B9M', title: 'UPSC IAS Exam Prelims & Mains Strategy', channel: 'MedPrep' },
+  ],
+  civil_services_training: [
+    { id: 'UBKtl3A-8jQ', title: 'LBSNAA Training Life & Experience', channel: 'Physics Wallah' },
+  ],
+  civil_services_senior: [
+    { id: 'dpTFQSL9B9M', title: 'Civil Services Career Paths & Perks', channel: 'MedPrep' },
+  ],
+  civil_services: [
+    { id: 'UBKtl3A-8jQ', title: 'UPSC Civil Services Guide for Beginners', channel: 'Physics Wallah' },
+    { id: 'dpTFQSL9B9M', title: 'UPSC IAS Preparation Strategy', channel: 'MedPrep' },
+  ],
+
+  // --- OTHER TOPICS ---
   kcet: [
     { id: 'jNQXAC9IVRw', title: 'KCET Preparation Strategy & Syllabus', channel: 'Karnataka Exams' },
     { id: 'cT3KsZQlJh8', title: 'KCET Counselling Process Explained', channel: 'KEA Official' },
@@ -61,6 +222,14 @@ const CURATED_VIDEOS = {
 }
 
 export function getVideosForTopic(topic) {
+  if (Array.isArray(topic)) {
+    for (const t of topic) {
+      if (CURATED_VIDEOS[t]) {
+        return CURATED_VIDEOS[t]
+      }
+    }
+    return CURATED_VIDEOS['career_guidance']
+  }
   return CURATED_VIDEOS[topic] || CURATED_VIDEOS['career_guidance']
 }
 

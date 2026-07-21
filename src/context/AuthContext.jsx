@@ -2,16 +2,6 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 const AuthContext = createContext(null)
-const LOCAL_AUTH_DATA_KEYS = [
-  'aageKyaRoadmap',
-  'aageKyaResult',
-  'aageKyaFormData',
-  'aageKyaLastResult',
-  'aageKyaLastFormData',
-  'aageKyaLastRoadmap',
-  'aageKyaCheckedMilestones',
-  'aageKyaPendingRoadmap',
-]
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
@@ -116,16 +106,14 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut()
+    await supabase.auth.signOut()
     localStorage.removeItem('aageKyaDemoSession')
-    LOCAL_AUTH_DATA_KEYS.forEach((key) => localStorage.removeItem(key))
-    Object.keys(localStorage)
-      .filter((key) => key.startsWith('aageKyaCompletedTasks:'))
-      .forEach((key) => localStorage.removeItem(key))
+    localStorage.removeItem('aageKyaRoadmap')
+    localStorage.removeItem('aageKyaResult')
+    localStorage.removeItem('aageKyaFormData')
     setSession(null)
     setUser(null)
     setProfile(null)
-    return { error }
   }
 
   function loginAsDemo(role, customEmail) {

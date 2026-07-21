@@ -1,14 +1,20 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const EXAMS = [
-  { id: 'kcet', name: 'KCET', icon: '🎯', color: 'from-orange-500/20 to-amber-500/10 border-orange-500/20', desc: 'Karnataka Common Entrance Test' },
-  { id: 'jee_main', name: 'JEE Main', icon: '⚡', color: 'from-blue-500/20 to-indigo-500/10 border-blue-500/20', desc: 'Joint Entrance Examination Main' },
-  { id: 'jee_advanced', name: 'JEE Advanced', icon: '🏆', color: 'from-purple-500/20 to-violet-500/10 border-purple-500/20', desc: 'For IIT Admissions' },
-  { id: 'neet', name: 'NEET', icon: '🩺', color: 'from-emerald-500/20 to-green-500/10 border-emerald-500/20', desc: 'National Eligibility cum Entrance Test' },
-  { id: 'comedk', name: 'COMEDK', icon: '🎓', color: 'from-cyan-500/20 to-teal-500/10 border-cyan-500/20', desc: 'Consortium of Medical Engineering & Dental Colleges Karnataka' },
-  { id: 'cuet', name: 'CUET', icon: '📚', color: 'from-rose-500/20 to-pink-500/10 border-rose-500/20', desc: 'Common University Entrance Test' },
+  { id: 'kcet', name: 'KCET', icon: '🎯', color: 'from-orange-500/20 to-amber-500/10 border-orange-500/20', desc: 'Karnataka Common Entrance Test', stream: 'Science (PCM)' },
+  { id: 'jee_main', name: 'JEE Main', icon: '⚡', color: 'from-blue-500/20 to-indigo-500/10 border-blue-500/20', desc: 'Joint Entrance Examination Main', stream: 'Science (PCM)' },
+  { id: 'jee_advanced', name: 'JEE Advanced', icon: '🏆', color: 'from-purple-500/20 to-violet-500/10 border-purple-500/20', desc: 'For IIT Admissions', stream: 'Science (PCM)' },
+  { id: 'neet', name: 'NEET', icon: '🩺', color: 'from-emerald-500/20 to-green-500/10 border-emerald-500/20', desc: 'National Eligibility cum Entrance Test', stream: 'Science (PCB)' },
+  { id: 'comedk', name: 'COMEDK', icon: '🎓', color: 'from-cyan-500/20 to-teal-500/10 border-cyan-500/20', desc: 'Consortium of Medical Engineering & Dental Colleges Karnataka', stream: 'Science (PCM)' },
+  { id: 'cuet', name: 'CUET', icon: '📚', color: 'from-rose-500/20 to-pink-500/10 border-rose-500/20', desc: 'Common University Entrance Test', stream: 'All' },
+  { id: 'clat', name: 'CLAT', icon: '⚖️', color: 'from-amber-500/20 to-yellow-500/10 border-amber-500/20', desc: 'Common Law Admission Test', stream: 'Arts / Design / Law' },
+  { id: 'uceed', name: 'UCEED', icon: '🎨', color: 'from-pink-500/20 to-rose-500/10 border-pink-500/20', desc: 'Undergraduate Common Entrance Examination for Design', stream: 'Arts / Design / Law' },
+  { id: 'bitsat', name: 'BITSAT', icon: '🚀', color: 'from-teal-500/20 to-cyan-500/10 border-teal-500/20', desc: 'BITS Admission Test', stream: 'Science (PCM)' },
+  { id: 'ipmat', name: 'IPMAT', icon: '💼', color: 'from-indigo-500/20 to-blue-500/10 border-indigo-500/20', desc: 'Integrated Program in Management Aptitude Test', stream: 'Commerce' },
+  { id: 'ca_foundation', name: 'CA Foundation', icon: '📊', color: 'from-yellow-500/20 to-orange-500/10 border-yellow-500/20', desc: 'Chartered Accountancy Entry Exam', stream: 'Commerce' },
+  { id: 'iata', name: 'IISER Aptitude Test (IAT)', icon: '🔬', color: 'from-green-500/20 to-emerald-500/10 border-green-500/20', desc: 'For BS-MS Dual Degrees at IISERs', stream: 'Science (PCM)' },
 ]
 
 // Mock counselling data
@@ -28,7 +34,7 @@ const COUNSELLING_DATA = {
       { rankRange: '1–1000', branches: ['CS at top NITs (Trichy, Surathkal, Warangal)', 'EC at NIT Trichy', 'CS at IIIT Hyderabad'], type: 'Top Tier' },
       { rankRange: '1001–5000', branches: ['CS at mid-tier NITs', 'EC at top NITs', 'CS at IIITs', 'DTU/NSUT Delhi'], type: 'Excellent' },
       { rankRange: '5001–15000', branches: ['CS/EC at lower NITs', 'ME at top NITs', 'CS at newer IIITs'], type: 'Very Good' },
-      { rankRange: '15001–50000', branches: ['Non-CS branches at NITs', 'CS at state-funded colleges', 'GFTIs'], type: 'Good' },
+      { rankRange: '1501–50000', branches: ['Non-CS branches at NITs', 'CS at state-funded colleges', 'GFTIs'], type: 'Good' },
       { rankRange: '50001–100000', branches: ['Any branch at lower NITs', 'CS at state engineering colleges', 'Consider private colleges'], type: 'Average' },
     ]
   },
@@ -63,6 +69,48 @@ const COUNSELLING_DATA = {
       { rankRange: 'Top 5%', branches: ['BA at mid-tier DU colleges', 'Central universities (Hyderabad, Allahabad)', 'Jamia Millia Islamia'], type: 'Excellent' },
       { rankRange: 'Top 15%', branches: ['State central universities', 'Integrated programs at CUs', 'BA/BSc at regional CUs'], type: 'Very Good' },
       { rankRange: 'Top 30%', branches: ['Newer central universities', 'Distance programs at IGNOU', 'State universities'], type: 'Good' },
+    ]
+  },
+  clat: {
+    ranges: [
+      { rankRange: '1–100', branches: ['NLSIU Bangalore', 'NALSAR Hyderabad', 'WBNUJS Kolkata'], type: 'Top Tier' },
+      { rankRange: '101–500', branches: ['NLU Jodhpur', 'GNLU Gandhinagar', 'NLIU Bhopal'], type: 'Excellent' },
+      { rankRange: '501–1500', branches: ['HNLU Raipur', 'RMLNLU Lucknow', 'CNLU Patna'], type: 'Very Good' },
+      { rankRange: '1501–4000', branches: ['DSNLU Visakhapatnam', 'NUALS Kochi', 'Other newer NLUs'], type: 'Good' },
+    ]
+  },
+  uceed: {
+    ranges: [
+      { rankRange: '1–50', branches: ['B.Des at IIT Bombay', 'B.Des at IIT Delhi'], type: 'Top Tier' },
+      { rankRange: '51–150', branches: ['B.Des at IIT Guwahati', 'B.Des at IIT Hyderabad'], type: 'Excellent' },
+      { rankRange: '151–400', branches: ['B.Des at IIITDM Jabalpur', 'Top private design colleges'], type: 'Very Good' },
+    ]
+  },
+  bitsat: {
+    ranges: [
+      { rankRange: '320–450', branches: ['CS at BITS Pilani', 'CS at BITS Goa', 'CS at BITS Hyderabad'], type: 'Top Tier' },
+      { rankRange: '280–319', branches: ['ECE at BITS Pilani', 'CS/ECE at BITS Goa/Hyd', 'ENI at BITS Pilani'], type: 'Excellent' },
+      { rankRange: '240–279', branches: ['Mechanical at BITS Pilani', 'Chemical at BITS Goa', 'Dual Degree Science at BITS Pilani'], type: 'Very Good' },
+      { rankRange: '200–239', branches: ['Civil at BITS Hyderabad', 'Manufacturing at BITS Pilani'], type: 'Good' },
+    ]
+  },
+  ipmat: {
+    ranges: [
+      { rankRange: 'Top 1%', branches: ['IPM (BBA+MBA) at IIM Indore'], type: 'Top Tier' },
+      { rankRange: 'Top 3%', branches: ['IPM at IIM Rohtak', 'IPM at IIM Ranchi'], type: 'Excellent' },
+      { rankRange: 'Top 10%', branches: ['IPM at IIM Jammu', 'IPM at IIM Bodh Gaya', 'Nirma University BBA+MBA'], type: 'Very Good' },
+    ]
+  },
+  ca_foundation: {
+    ranges: [
+      { rankRange: 'Pass (Score 200+)', branches: ['Eligible for CA Intermediate & Articleship registration', 'Direct access to CA Inter study cohorts'], type: 'Top Tier' }
+    ]
+  },
+  iata: {
+    ranges: [
+      { rankRange: '1–500', branches: ['BS-MS at IISc Bangalore', 'BS-MS at IISER Pune', 'BS-MS at IISER Kolkata'], type: 'Top Tier' },
+      { rankRange: '501–1500', branches: ['BS-MS at IISER Mohali', 'BS-MS at IISER Bhopal', 'BS-MS at IISER Trivandrum'], type: 'Excellent' },
+      { rankRange: '1501–3000', branches: ['BS-MS at IISER Tirupati', 'BS-MS at IISER Berhampur'], type: 'Very Good' },
     ]
   }
 }
@@ -166,6 +214,31 @@ export default function CompetitiveExams() {
   const [showSimulator, setShowSimulator] = useState(false)
   const resultsRef = useRef(null)
 
+  // Search & Filter state
+  const [activeStream, setActiveStream] = useState('ALL')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredExams = useMemo(() => {
+    return EXAMS.filter(exam => {
+      const matchesSearch = exam.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            exam.desc.toLowerCase().includes(searchQuery.toLowerCase())
+      
+      let matchesStream = true
+      if (activeStream !== 'ALL') {
+        if (activeStream === 'Science (PCM)') {
+          matchesStream = exam.stream === 'Science (PCM)' || exam.stream === 'All'
+        } else if (activeStream === 'Science (PCB)') {
+          matchesStream = exam.stream === 'Science (PCB)' || exam.stream === 'All'
+        } else if (activeStream === 'Commerce') {
+          matchesStream = exam.stream === 'Commerce' || exam.stream === 'All'
+        } else if (activeStream === 'Arts / Design / Law') {
+          matchesStream = exam.stream === 'Arts / Design / Law' || exam.stream === 'All'
+        }
+      }
+      return matchesSearch && matchesStream
+    })
+  }, [searchQuery, activeStream])
+
   const examData = selectedExam ? COUNSELLING_DATA[selectedExam] : null
 
   const getMatchingRange = (r) => {
@@ -173,6 +246,11 @@ export default function CompetitiveExams() {
     const rankNum = parseInt(r)
     if (isNaN(rankNum)) return null
     return examData.ranges.find((range) => {
+      if (range.rankRange.includes('Pass') && rankNum >= 200) return true
+      if (range.rankRange.includes('Top')) {
+        const pct = range.rankRange.match(/(\d+)%/)
+        if (pct) return true // Mock match for simplicity
+      }
       const parts = range.rankRange.replace(/,/g, '').match(/(\d+)[–-](\d+)/)
       if (parts) {
         return rankNum >= parseInt(parts[1]) && rankNum <= parseInt(parts[2])
@@ -200,7 +278,7 @@ export default function CompetitiveExams() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-16"
+          className="text-center mb-10"
         >
           <div className="inline-flex items-center gap-2 bg-saffron/10 border border-saffron/25 rounded-full px-5 py-2 mb-6">
             <span className="w-2 h-2 rounded-full bg-saffron animate-pulse" />
@@ -215,14 +293,45 @@ export default function CompetitiveExams() {
           </p>
         </motion.div>
 
+        {/* Search & Filters */}
+        <div className="glass-card p-6 border-white/10 space-y-4 mb-8">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by exam name or description (e.g. JEE, CLAT, BITSAT)..."
+              className="w-full bg-[#111827]/80 border border-white/10 hover:border-white/20 focus:border-saffron/60 rounded-xl px-12 py-3.5 text-white placeholder-gray-500 text-sm transition-all outline-none focus:ring-2 focus:ring-saffron/30"
+            />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg">🔍</span>
+          </div>
+
+          {/* Stream pills */}
+          <div className="flex flex-wrap gap-2 pt-2">
+            {['ALL', 'Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Design / Law'].map((stream) => (
+              <button
+                key={stream}
+                onClick={() => setActiveStream(stream)}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  activeStream === stream
+                    ? 'bg-saffron/15 border-saffron text-saffron'
+                    : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/25'
+                }`}
+              >
+                {stream}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Exam Selection Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-12">
-          {EXAMS.map((exam, i) => (
+          {filteredExams.map((exam, i) => (
             <motion.button
               key={exam.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
+              transition={{ delay: i * 0.04 }}
               onClick={() => { setSelectedExam(exam.id); setRank(''); setShowSimulator(false) }}
               className={`p-6 rounded-2xl border text-left transition-all duration-300 bg-gradient-to-br ${exam.color} ${
                 selectedExam === exam.id
@@ -235,6 +344,11 @@ export default function CompetitiveExams() {
               <p className="text-gray-400 text-xs mt-1 line-clamp-2">{exam.desc}</p>
             </motion.button>
           ))}
+          {filteredExams.length === 0 && (
+            <div className="col-span-full glass-card p-12 text-center text-gray-400">
+              No entrance exams match your current filters.
+            </div>
+          )}
         </div>
 
         {/* Rank Input & Results */}
@@ -246,7 +360,7 @@ export default function CompetitiveExams() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
+              className="space-y-8 text-left"
             >
               {/* Rank Input Card */}
               <div className="glass-card-premium p-8">

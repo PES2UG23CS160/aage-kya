@@ -1,20 +1,17 @@
 /**
  * Central API helper.
  * In production  → VITE_API_URL points to your deployed backend (Railway/Render)
- * In development → uses same-origin /api calls (Vite proxies them)
+ * In development → falls back to localhost:5000 (Vite proxy handles it)
  */
-const BASE_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+const BASE_URL = import.meta.env.VITE_API_URL || ''
 
-export function apiUrl(path = '') {
-  const normalizedPath = path && !path.startsWith('/') ? `/${path}` : path
-  return `${BASE_URL}${normalizedPath}`
-}
-
-export async function apiFetch(path, options = {}) {
-  return fetch(apiUrl(path), {
-    ...options,
+async function apiFetch(path, options = {}) {
+  const url = `${BASE_URL}${path}`
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options,
   })
+  return res
 }
 
 export async function getHealth() {
@@ -39,22 +36,6 @@ export async function postRoadmap(formData, option, authToken) {
 
 export async function getMentors() {
   return apiFetch('/api/mentors')
-}
-
-export async function getScholarships() {
-  return apiFetch('/api/scholarships')
-}
-
-export async function getColleges() {
-  return apiFetch('/api/colleges')
-}
-
-export async function getVerifiedFeePlans() {
-  return apiFetch('/api/fees/pilot')
-}
-
-export async function getVerifiedFeePlan(id) {
-  return apiFetch(`/api/fees/pilot/${encodeURIComponent(id)}`)
 }
 
 export async function postMentorApply(payload) {

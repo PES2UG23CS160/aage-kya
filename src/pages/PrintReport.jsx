@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import { apiUrl } from '../api'
 
 // ─── Summary-mode report ──────────────────────────────────────────────────────
 
 function SummaryReport({ guidance, profile, printDate }) {
+  const paths = (guidance?.options || []).map(o => o.path).join(', ')
   const allCareers = [...new Set((guidance?.options || []).flatMap(o => o.opens_doors_to || []))]
 
   return (
@@ -371,7 +371,7 @@ export default function PrintReport() {
       const fetchMentorOnly = async () => {
         const streamToMatch = activeProfile?.stream || 'Class 10 / Stream Selection'
         try {
-          const res = await fetch(apiUrl('/api/mentors'))
+          const res = await fetch('http://localhost:5000/api/mentors')
           if (res.ok) {
             const mentors = await res.json()
             const match = mentors.find(m => {
@@ -425,7 +425,7 @@ export default function PrintReport() {
         })
 
         const streamToMatch = profile.stream || 'Class 10 / Stream Selection'
-        const res = await fetch(apiUrl('/api/mentors'))
+        const res = await fetch('http://localhost:5000/api/mentors')
         if (res.ok) {
           const mentors = await res.json()
           const match = mentors.find(m => {
@@ -443,7 +443,7 @@ export default function PrintReport() {
       }
     }
     load()
-  }, [user, profile, classLevel, activeProfile])
+  }, [user, profile, classLevel, activeProfile?.stream])
 
   // Auto trigger print dialog on load once content is loaded
   useEffect(() => {

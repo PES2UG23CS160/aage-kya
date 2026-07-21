@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import PrivacyConsentModal, { useConsent } from '../components/PrivacyConsentModal'
 import CourseReality from '../components/CourseReality'
-import { apiUrl } from '../api'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -77,7 +76,6 @@ function validate(step, form, classLevel = 'class12') {
   }
   if (step === 3) {
     if (classLevel === 'class10') {
-      if (!form.stream)             e.stream = 'Please pick which stream you are leaning towards.'
       if (!form.interests.trim())   e.interests = 'Please fill this in — it really matters.'
       if (!form.favoriteSubjects.trim()) e.favoriteSubjects = 'Please share your favorite subjects — this helps us understand you.'
       if (!form.careerGoals.trim())      e.careerGoals      = 'Please share your career goals or dreams.'
@@ -88,6 +86,7 @@ function validate(step, form, classLevel = 'class12') {
       if (!form.riskComfort)        e.riskComfort = 'Please pick your risk comfort preference.'
       if (form.coachingAccess === null) e.coachingAccess = 'Please select Yes or No.'
       if (!form.biggestFear.trim()) e.biggestFear = 'Please fill this in — it really matters.'
+
     } else {
       if (!form.interests.trim())   e.interests   = 'Please fill this in — it really matters.'
       if (!form.preferredModeOfAdmission) e.preferredModeOfAdmission = 'Please select your preferred mode of admission.'
@@ -285,8 +284,8 @@ function Step1({ form, setForm, errors, classLevel = 'class12' }) {
         </Label>
         <div className="relative">
           <input
-            id="marks" type="number" min="0" max="100"
-            placeholder="e.g. 78"
+            id="marks" type="number" min="0" max="100" step="0.01"
+            placeholder="e.g. 78.5"
             value={form.marks}
             onChange={set('marks')}
             className={`${errors.marks ? invalid : normal} pr-10`}
@@ -304,8 +303,13 @@ function Step1({ form, setForm, errors, classLevel = 'class12' }) {
             />
           </div>
         )}
+        {form.marks && !isNaN(+form.marks) && (
+          <p className="mt-1 text-xs text-saffron font-semibold">
+            {(+form.marks).toFixed(2)}% entered
+          </p>
+        )}
         {!errors.marks && (
-          <Hint>Be honest. Your guidance is only useful if it&apos;s based on reality — not what you wish your marks were.</Hint>
+          <Hint>Be honest. Your guidance is only useful if it&apos;s based on reality &mdash; not what you wish your marks were.</Hint>
         )}
         <FieldError msg={errors.marks} />
       </div>
@@ -522,7 +526,7 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
     else setTranscribingFear(true)
 
     try {
-      const res = await fetch(apiUrl('/api/transcribe'), {
+      const res = await fetch('http://localhost:5000/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio: base64data, mimeType })
@@ -558,27 +562,22 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
       {classLevel === 'class10' && (
         <>
           <PillGroup
-            label="Which stream are you leaning towards right now?"
-            required
+            label="Do you already have a preferred stream? (Optional)"
             options={[
-              'Science (PCM)',
-              'Science (PCB)',
-              'Science (PCMB)',
-              'Commerce',
-              'Arts / Humanities',
-              'Diploma / Polytechnic',
-              'ITI / Vocational',
-              'Undecided',
+              { value: 'Science (PCM)', label: '⚗️ Science (PCM)' },
+              { value: 'Science (PCB)', label: '🧬 Science (PCB)' },
+              { value: 'Science (PCMB)', label: '🔬 Science (PCMB)' },
+              { value: 'Commerce', label: '📊 Commerce' },
+              { value: 'Arts / Humanities', label: '🎭 Arts / Humanities' },
+              { value: 'Diploma / Polytechnic', label: '🛠️ Diploma / Polytechnic' },
+              { value: 'ITI / Vocational', label: '🔧 ITI / Vocational' },
+              { value: 'Undecided', label: '🤔 Undecided' },
             ]}
             value={form.stream}
-            onToggle={(v) => setForm((f) => ({ ...f, stream: v }))}
+            onToggle={(v) => setForm((f) => ({ ...f, stream: v === f.stream ? '' : v }))}
             error={errors.stream}
-            hint="It's okay if you're completely undecided — we will help you explore all options."
+            hint="Completely optional — skip this if you're unsure. We will help you explore all options based on your interests."
           />
-          {/* Reality panel — appears below the pill once a stream is selected */}
-          {form.stream && form.stream !== 'Undecided' && (
-            <CourseReality streamKey={form.stream} compact />
-          )}
         </>
       )}
 
@@ -763,25 +762,92 @@ function Step3({ form, setForm, errors, classLevel = 'class12' }) {
   )
 }
 
+// ─── Class Selection Screen ───────────────────────────────────────────────────
+
+function ClassLevelSelection({ onSelect }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[70vh] py-12 px-4 sm:px-6 animate-fade-in relative z-10">
+      <div className="text-center max-w-xl mb-12">
+        <div className="inline-flex items-center gap-2 bg-saffron/10 border border-saffron/25 rounded-full px-4 py-2 mb-6">
+          <span className="w-2 h-2 rounded-full bg-saffron animate-pulse" />
+          <span className="text-saffron text-sm font-semibold">Choose Your Path</span>
+        </div>
+        <h1 className="font-display text-4xl md:text-5xl font-extrabold text-white mb-4">
+          Where are you in your <span className="gradient-text">academic journey</span>?
+        </h1>
+        <p className="text-gray-400 text-lg leading-relaxed">
+          We will customize your profile builder and AI recommendations based on your choice.
+        </p>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
+        <button
+          onClick={() => onSelect('class10')}
+          className="group relative flex flex-col items-start p-8 rounded-3xl border border-white/10 bg-white/5 hover:bg-gradient-to-br hover:from-saffron/20 hover:to-saffron-dark/5 hover:border-saffron/30 hover:scale-[1.03] transition-all duration-300 text-left shadow-lg shadow-black/40 overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-saffron/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+          <div className="w-14 h-14 rounded-2xl bg-saffron/10 border border-saffron/20 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
+            📗
+          </div>
+          <h2 className="font-display text-2xl font-bold text-white mb-3 group-hover:text-saffron transition-colors">
+            Post 10th Standard
+          </h2>
+          <p className="text-gray-400 text-sm leading-relaxed mb-4">
+            For students seeking advice on stream selection (Science, Commerce, Arts), ITI, Polytechnic, or initial diploma tracks.
+          </p>
+          <div className="mt-auto flex items-center gap-2 text-xs font-semibold text-saffron group-hover:gap-3 transition-all">
+            <span>Build Class 10 Profile</span>
+            <span>→</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onSelect('class12')}
+          className="group relative flex flex-col items-start p-8 rounded-3xl border border-white/10 bg-white/5 hover:bg-gradient-to-br hover:from-indigo-500/20 hover:to-purple-500/5 hover:border-indigo-500/30 hover:scale-[1.03] transition-all duration-300 text-left shadow-lg shadow-black/40 overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
+            🎓
+          </div>
+          <h2 className="font-display text-2xl font-bold text-white mb-3 group-hover:text-indigo-400 transition-colors">
+            Post 12th Standard
+          </h2>
+          <p className="text-gray-400 text-sm leading-relaxed mb-4">
+            For students looking for specific degree paths, realistic colleges, competitive entrance exams, scholarships, and career roadmaps.
+          </p>
+          <div className="mt-auto flex items-center gap-2 text-xs font-semibold text-indigo-400 group-hover:gap-3 transition-all">
+            <span>Build Class 12 Profile</span>
+            <span>→</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Onboarding() {
-  const { classLevel = 'class12' } = useParams()
+  const { classLevel } = useParams()
+  const [selectedClassLevel, setSelectedClassLevel] = useState(classLevel || '')
   const [step, setStep]     = useState(1)
-  const [form, setForm]     = useState(() => ({ ...INITIAL_FORM, classLevel }))
+  const [form, setForm]     = useState(() => ({ ...INITIAL_FORM, classLevel: classLevel || 'class12' }))
   const [errors, setErrors] = useState({})
   const navigate = useNavigate()
   const { consentGiven, giveConsent } = useConsent()
 
   useEffect(() => {
-    setForm((f) => ({ ...f, classLevel }))
+    if (classLevel) {
+      setSelectedClassLevel(classLevel)
+      setForm((f) => ({ ...f, classLevel }))
+    }
   }, [classLevel])
 
   const total       = STEPS.length
   const currentStep = STEPS[step - 1]
 
   const handleNext = () => {
-    const errs = validate(step, form, classLevel)
+    const errs = validate(step, form, selectedClassLevel)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       const firstId = Object.keys(errs)[0]
@@ -793,13 +859,27 @@ export default function Onboarding() {
       setStep((s) => s + 1)
     } else {
       localStorage.setItem('aageKyaFormData', JSON.stringify(form))
-      navigate(classLevel === 'class10' ? '/class10/result' : '/class12/result', { state: { formData: form } })
+      navigate(selectedClassLevel === 'class10' ? '/class10/result' : '/class12/result', { state: { formData: form } })
     }
   }
 
   const handleBack = () => {
     setErrors({})
     setStep((s) => Math.max(1, s - 1))
+  }
+
+  if (!selectedClassLevel) {
+    return (
+      <main className="pt-16 min-h-screen pb-12 relative flex flex-col items-center justify-center">
+        <div className="fixed inset-0 bg-mesh-premium pointer-events-none" />
+        {!consentGiven && <PrivacyConsentModal onConsent={giveConsent} />}
+        <ClassLevelSelection onSelect={(lvl) => {
+          setSelectedClassLevel(lvl)
+          setForm((f) => ({ ...f, classLevel: lvl }))
+          navigate(`/${lvl}/onboarding`, { replace: true })
+        }} />
+      </main>
+    )
   }
 
   return (

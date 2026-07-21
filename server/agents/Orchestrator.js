@@ -121,14 +121,15 @@ export async function runProfileAnalysisAgent(state) {
     return await runLLMAgent(prompt)
   } catch (err) {
     console.warn('[ProfileAnalysisAgent] Falling back to local mock analyzer...')
-    const marksNum = Number(form.marks) || 80
+    const marksNum = parseFloat(form.marks) || 0
+    const marksLabel = marksNum >= 90 ? `${marksNum}% (Excellent)` : marksNum >= 75 ? `${marksNum}% (Good)` : marksNum >= 50 ? `${marksNum}% (Average)` : `${marksNum}% (Needs improvement)`
     return {
-      academicStanding: marksNum > 85 ? "High (Consistent academic record)" : marksNum > 60 ? "Medium (Average performance)" : "Low (Needs support)",
-      financialCategory: form.incomeRange === 'below_2.5L' ? 'Subsidized' : 'Affordable',
+      academicStanding: marksNum >= 80 ? `High — ${marksLabel}` : marksNum >= 55 ? `Medium — ${marksLabel}` : `Low — ${marksLabel}`,
+      financialCategory: form.incomeRange === 'below_2.5L' ? 'Subsidized' : form.incomeRange === '2.5L-5L' ? 'Affordable' : 'Standard',
       riskAppetite: "Balanced",
       keyConstraints: ["Budget limits", `Home state preference (${form.state || 'India'})`],
-      keyStrengths: [form.interests ? `Interest in ${form.interests}` : "Academics"],
-      coachingNeeds: "Self-study supplemented by targeted online learning resources."
+      keyStrengths: [form.interests ? `Interest in ${form.interests}` : "Academics", `${marksNum}% academic performance`],
+      coachingNeeds: marksNum >= 85 ? "Advanced prep — target competitive national exams." : "Self-study supplemented by targeted coaching resources."
     }
   }
 }
@@ -143,22 +144,139 @@ export async function runSearchRetrievalAgent(state) {
   }
 
   const stream = form.stream || ''
+  const marks = parseFloat(form.marks) || 0
+  const budget = form.budget || ''
+  const statePref = form.preferredState || ''
+  const classLevel = form.classLevel || 'class12'
+
   let colleges = []
   let scholarships = []
 
   try {
-    const { data: colData } = await supabase
+    // 1. Fetch colleges
+    const { data: colData, error: colError } = await supabase
       .from('colleges')
       .select('*')
-      .contains('streams', [stream])
-      .limit(20)
-    colleges = colData || []
+    
+    if (colError) throw colError
+    
+    let allColleges = colData || []
+    
+    // Parse budget limits
+    let maxBudget = Infinity
+    if (classLevel === 'class10') {
+      // Map high school/coaching budget to corresponding future college budget
+      if (budget === 'below_20k') maxBudget = 100000
+      else if (budget === '20k-60k') maxBudget = 300000
+      else if (budget === '60k-1.5L') maxBudget = 600000
+    } else {
+      if (budget === 'below_1L') maxBudget = 100000
+      else if (budget === '1L-3L') maxBudget = 300000
+      else if (budget === '3L-6L') maxBudget = 600000
+    }
 
-    const { data: scholData } = await supabase
+    // Filter and score colleges
+    const scoredColleges = allColleges.filter(c => {
+      // Stream match: if student is class12, must match stream.
+      if (classLevel === 'class12' && stream) {
+        if (!c.streams || !c.streams.includes(stream)) return false
+      }
+      return true
+    }).map(c => {
+      let score = 0
+      
+      // Marks check: within range?
+      if (marks >= c.min_marks) {
+        score += 30
+      } else if (marks + 10 >= c.min_marks) {
+        score += 10
+      } else {
+        score -= 50
+      }
+
+      // Budget check:
+      if (c.yearly_cost_max <= maxBudget) {
+        score += 40
+      } else if (c.yearly_cost_min <= maxBudget) {
+        score += 20
+      } else {
+        score -= 40
+      }
+
+      // State check:
+      if (statePref && statePref !== 'Any State') {
+        if (c.state && c.state.toLowerCase() === statePref.toLowerCase()) {
+          score += 30
+        }
+      } else {
+        score += 10
+      }
+
+      // College type: central/state colleges are usually cheaper and look good for low income
+      if (form.incomeRange === 'below_2.5L' && (c.college_type === 'central' || c.college_type === 'state')) {
+        score += 15
+      }
+
+      return { ...c, matchScore: score }
+    })
+    
+    // Sort by match score descending
+    scoredColleges.sort((a, b) => b.matchScore - a.matchScore)
+    // Remove severely mismatched colleges (score < 0) unless we have too few
+    let filteredColleges = scoredColleges.filter(c => c.matchScore >= 0)
+    if (filteredColleges.length < 5) {
+      filteredColleges = scoredColleges.slice(0, 10)
+    }
+    colleges = filteredColleges.slice(0, 20)
+
+    // 2. Fetch scholarships and filter them
+    const { data: scholData, error: scholError } = await supabase
       .from('scholarships')
       .select('*')
-      .limit(10)
-    scholarships = scholData || []
+    if (scholError) throw scholError
+
+    let allScholarships = scholData || []
+    
+    // Parse student income range in lakh
+    let studentIncomeLakh = 99
+    if (form.incomeRange === 'below_2.5L') studentIncomeLakh = 2.5
+    else if (form.incomeRange === '2.5L-5L') studentIncomeLakh = 5.0
+    else if (form.incomeRange === '5L-10L') studentIncomeLakh = 10.0
+    else if (form.incomeRange === 'above_10L') studentIncomeLakh = 99.0
+
+    const scoredScholarships = allScholarships.map(s => {
+      let score = 0
+      
+      // Income eligibility
+      if (s.eligibility_income_max_lakh >= studentIncomeLakh) {
+        score += 30
+      } else {
+        score -= 50
+      }
+
+      // Marks eligibility
+      if (marks >= s.eligibility_marks_min) {
+        score += 20
+      } else {
+        score -= 50
+      }
+
+      // Stream eligibility
+      if (s.eligible_streams && (s.eligible_streams.includes('All') || s.eligible_streams.includes(stream))) {
+        score += 20
+      }
+
+      // State eligibility
+      if (s.eligible_states && (s.eligible_states.includes('All') || s.eligible_states.includes(form.state))) {
+        score += 20
+      }
+
+      return { ...s, matchScore: score }
+    })
+
+    scoredScholarships.sort((a, b) => b.matchScore - a.matchScore)
+    scholarships = scoredScholarships.filter(s => s.matchScore >= 0).slice(0, 10)
+
   } catch (err) {
     console.warn('RAG Database retrieval failed, falling back:', err.message)
   }
@@ -308,7 +426,12 @@ export async function runCollegeRecommendationAgent(state) {
     Marks: ${form.marks}%
     Admission Mode: ${form.preferredModeOfAdmission}
 
-    Map colleges to the career paths. Feel free to supplement with well-known Indian colleges matching their preferences.
+    CRITICAL GROUNDING RULES:
+    1. You MUST ONLY recommend colleges that are present in the "Retrieved Colleges" list provided above. Do NOT hallucinate other institutions.
+    2. Ensure that the yearly fee range of each recommended college is compatible with the Student Budget (${form.budget}) and that their minimum marks requirements are met by the student's marks of ${form.marks}%.
+    3. State clearly in the "whyFit" field how the college's fee range fits the student's budget and how their marks meet the admission criteria.
+
+    Map colleges to the career paths.
     Respond ONLY with a JSON object:
     {
       "mappings": [
@@ -332,36 +455,119 @@ export async function runCollegeRecommendationAgent(state) {
   } catch (err) {
     console.warn('[CollegeRecommendationAgent] Falling back to local mock mapping...')
     return {
-      mappings: (careerPaths.recommendations || []).map(opt => ({
-        path: opt.path,
-        colleges: retrievedColleges.length > 0
-          ? retrievedColleges.slice(0, 3).map(c => ({
-              name: c.name,
-              city: c.city,
-              state: c.state,
-              feeRange: `₹${c.yearly_cost_min.toLocaleString('en-IN')}–₹${c.yearly_cost_max.toLocaleString('en-IN')}/yr`,
-              admissionMode: form.preferredModeOfAdmission || "Entrance Exam / Merit",
-              whyFit: "Directly matches academic stream and falls within preferred budget thresholds."
-            }))
-          : [
-              {
-                name: "RV College of Engineering",
-                city: "Bengaluru",
-                state: "Karnataka",
-                feeRange: "₹2,20,000/yr",
-                admissionMode: "KCET / COMEDK",
-                whyFit: "Top-tier college offering excellent tech exposure and placements."
-              },
-              {
-                name: "PES University",
-                city: "Bengaluru",
-                state: "Karnataka",
-                feeRange: "₹3,80,000/yr",
-                admissionMode: "PESSAT / KCET",
-                whyFit: "Premium infrastructure and direct corporate recruiter partnerships."
+      mappings: (careerPaths.recommendations || []).map(opt => {
+        const pathLower = (opt.path || '').toLowerCase()
+        let fallbackColleges = []
+
+        if (pathLower.includes('commerce') || pathLower.includes('accountancy') || pathLower.includes('bba') || pathLower.includes('finance') || pathLower.includes('ca')) {
+          fallbackColleges = [
+            {
+              name: "Shri Ram College of Commerce (SRCC)",
+              city: "Delhi",
+              state: "Delhi",
+              feeRange: "₹58,000–₹1,08,000/yr",
+              admissionMode: "CUET",
+              whyFit: "Top-ranked commerce college in India with highly subsidized fees."
+            },
+            {
+              name: "Symbiosis College of Arts and Commerce",
+              city: "Pune",
+              state: "Maharashtra",
+              feeRange: "₹1,28,000–₹2,15,000/yr",
+              admissionMode: "Merit / Direct",
+              whyFit: "Highly respected institution for business and commerce studies."
+            }
+          ]
+        } else if (pathLower.includes('arts') || pathLower.includes('humanities') || pathLower.includes('ias') || pathLower.includes('civil')) {
+          fallbackColleges = [
+            {
+              name: "Lady Shri Ram College",
+              city: "Delhi",
+              state: "Delhi",
+              feeRange: "₹52,000–₹1,02,000/yr",
+              admissionMode: "CUET",
+              whyFit: "Elite humanities institution with extremely affordable fees."
+            },
+            {
+              name: "St. Xavier's College",
+              city: "Mumbai",
+              state: "Maharashtra",
+              feeRange: "₹92,000–₹1,72,000/yr",
+              admissionMode: "CUET / Entrance",
+              whyFit: "Historical institution renowned for arts and liberal education."
+            }
+          ]
+        } else if (pathLower.includes('doctor') || pathLower.includes('neet') || pathLower.includes('mbbs') || pathLower.includes('biotech') || pathLower.includes('physiotherapy')) {
+          fallbackColleges = [
+            {
+              name: "AIIMS New Delhi",
+              city: "Delhi",
+              state: "Delhi",
+              feeRange: "₹50,000–₹1,15,000/yr",
+              admissionMode: "NEET-UG",
+              whyFit: "India's premier medical institute with highly subsidized education fees."
+            },
+            {
+              name: "Madras Medical College",
+              city: "Chennai",
+              state: "Tamil Nadu",
+              feeRange: "₹48,000–₹1,02,000/yr",
+              admissionMode: "NEET-UG",
+              whyFit: "Respected state-run medical institution offering affordable learning."
+            }
+          ]
+        } else {
+          // Default Science/Engineering
+          fallbackColleges = [
+            {
+              name: "RV College of Engineering",
+              city: "Bengaluru",
+              state: "Karnataka",
+              feeRange: "₹1,40,000–₹2,25,000/yr",
+              admissionMode: "KCET / COMEDK",
+              whyFit: "Top-tier college offering excellent tech exposure and placements."
+            },
+            {
+              name: "PES University",
+              city: "Bengaluru",
+              state: "Karnataka",
+              feeRange: "₹1,95,000–₹3,15,000/yr",
+              admissionMode: "PESSAT / KCET",
+              whyFit: "Premium infrastructure and direct corporate recruiter partnerships."
+            }
+          ]
+        }
+
+        // Adjust fallback colleges if the budget is very low (e.g., below_20k or below_1L)
+        if (form.budget === 'below_20k' || form.budget === 'below_1L') {
+          fallbackColleges = fallbackColleges.map(c => {
+            if (c.name.includes("RV College") || c.name.includes("PES University")) {
+              return {
+                ...c,
+                name: "Government Engineering College (GEC)",
+                feeRange: "₹15,000–₹35,000/yr",
+                admissionMode: "State CET (Merit)",
+                whyFit: "Government college seats offer excellent education at highly subsidized rates."
               }
-            ]
-      }))
+            }
+            return c
+          })
+        }
+
+        return {
+          path: opt.path,
+          colleges: retrievedColleges.length > 0
+            ? retrievedColleges.slice(0, 3).map(c => ({
+                name: c.name,
+                city: c.city,
+                state: c.state,
+                feeRange: `₹${c.yearly_cost_min.toLocaleString('en-IN')}–₹${c.yearly_cost_max.toLocaleString('en-IN')}/yr`,
+                admissionMode: form.preferredModeOfAdmission || "Entrance Exam / Merit",
+                whyFit: "Directly matches academic stream and falls within preferred budget thresholds."
+              }))
+            : fallbackColleges
+        }
+      })
     }
   }
 }
@@ -788,12 +994,25 @@ export async function runMultiAgentOrchestrator(formData) {
       // Find mapped colleges & roadmaps for this option path
       const mappedCol = state.collegeRecommendations.find(m => m.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(m.path.toLowerCase()))
       const mappedRoad = state.roadmaps.find(r => r.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(r.path.toLowerCase()))
+      // For Class 10, the user is looking at high school + local coaching cost.
+      // We estimate this cost based on their selected high school/coaching budget range.
+      let costStr = '₹20,000–₹60,000/yr'
+      if (formData.classLevel === 'class10') {
+        const b = formData.budget
+        if (b === 'below_20k') costStr = '₹5,000–₹20,000/yr'
+        else if (b === '20k-60k') costStr = '₹20,000–₹60,000/yr'
+        else if (b === '60k-1.5L') costStr = '₹60,000–₹1,50,000/yr'
+        else if (b === 'above_1.5L') costStr = '₹1,50,000–₹2,50,000/yr'
+      } else {
+        costStr = mappedCol && mappedCol.colleges.length ? mappedCol.colleges[0].feeRange : '₹80,000–₹1,50,000/yr'
+      }
+
       return {
         path: opt.path,
         honest_take: opt.honest_take,
         requires_entrance_exam: opt.requires_entrance_exam || 'None',
         realistic_colleges: mappedCol ? mappedCol.colleges.map(c => c.name) : [],
-        avg_yearly_cost: mappedCol && mappedCol.colleges.length ? mappedCol.colleges[0].feeRange : '₹80,000–₹1,50,000/yr',
+        avg_yearly_cost: costStr,
         opens_doors_to: opt.opens_doors_to || [],
         watch_out_for: opt.watch_out_for || 'Competition is high.',
         backup_plan: opt.backup_plan || 'Look into alternative courses.',

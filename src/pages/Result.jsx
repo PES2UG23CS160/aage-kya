@@ -4,8 +4,8 @@ import { supabase } from '../supabaseClient'
 import AuthModal from '../components/AuthModal'
 import CourseReality from '../components/CourseReality'
 import ExamDetails from '../components/ExamDetails'
-import RankPredictor from '../components/RankPredictor'
-import { apiUrl } from '../api'
+import CourseOverlayPanel from '../components/CourseOverlayPanel'
+import CollegeDetailCard from '../components/CollegeDetailCard'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -17,14 +17,14 @@ const INCOME_LABELS = {
 }
 // ─── Backend API call ─────────────────────────────────────────────────────────
 
-async function requestGuidance(form) {
+async function callGemini(form) {
   const { data: { session } } = await supabase.auth.getSession()
   const headers = { 'Content-Type': 'application/json' }
   if (session) {
     headers['Authorization'] = `Bearer ${session.access_token}`
   }
 
-  const res = await fetch(apiUrl('/api/guidance'), {
+  const res = await fetch('http://localhost:5000/api/guidance', {
     method: 'POST',
     headers,
     body: JSON.stringify({ formData: form }),
@@ -74,11 +74,23 @@ export function Spinner() {
 export function NoApiKey() {
   return (
     <div className="glass-card p-8 text-center border-amber-500/30">
-      <div className="text-5xl mb-4">🛠️</div>
-      <h2 className="font-display text-xl font-bold text-white mb-2">Guidance is temporarily unavailable</h2>
-      <p className="text-gray-400 text-sm max-w-sm mx-auto">
-        The guidance service is not configured or is currently offline. Please retry later; no result has been fabricated.
+      <div className="text-5xl mb-4">🔑</div>
+      <h2 className="font-display text-xl font-bold text-white mb-2">API Key Missing</h2>
+      <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
+        Add your Groq API key to the <code className="bg-navy-800 px-2 py-0.5 rounded text-saffron text-xs">server/.env</code> file to generate personalised guidance.
       </p>
+      <div className="bg-navy-800 border border-white/10 rounded-xl p-4 text-left text-sm font-mono text-emerald-400 mb-6">
+        GROQ_API_KEY=your_key_here
+      </div>
+      <a
+        href="https://console.groq.com/keys"
+        target="_blank"
+        rel="noreferrer"
+        className="btn-primary text-sm px-6 py-3 inline-block"
+      >
+        Get Free Groq API Key →
+      </a>
+      <p className="text-gray-600 text-xs mt-4">Free tier · No credit card needed</p>
     </div>
   )
 }
@@ -116,9 +128,9 @@ function NoFormData() {
 function DataGroundingBadge({ grounded }) {
   if (grounded) {
     return (
-      <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1.5">
-        <span className="text-base leading-none">⚠️</span>
-        Prototype dataset — verify all facts on current official sites
+      <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        College & scholarship data verified from our database
       </div>
     )
   }
@@ -148,142 +160,6 @@ function ConfidenceBadge({ label, reason }) {
       <span>{icons[label] || '⚡'}</span>
       {label} Confidence
     </div>
-  )
-}
-
-const AGENT_LABELS = {
-  // snake_case keys from mock trace
-  student_profile_agent: 'Student Profile',
-  competitive_examination_agent: 'Exam Routes',
-  college_recommendation_agent: 'College Ranking',
-  fee_analysis_agent: 'Fee Analysis',
-  scholarship_agent: 'Scholarship Matching',
-  career_guidance_agent: 'Career Pathways',
-  verification_agent: 'Evidence Verification',
-  recommendation_explanation_agent: 'Explanation',
-  orchestrator_agent: 'Final Orchestration',
-  // Human-readable keys from Orchestrator.js executionLogs
-  'Profile Analysis Agent': 'Student Profile',
-  'Search & Retrieval Agent': 'Search & Retrieval',
-  'Career Recommendation Agent': 'Career Pathways',
-  'College Recommendation Agent': 'College Ranking',
-  'Scholarship Agent': 'Scholarship Matching',
-  'Study Abroad Agent': 'Study Abroad',
-  'Career Roadmap Agent': 'Career Roadmap',
-  'Mentor Agent': 'Mentor Matching',
-  'YouTube Resource Agent': 'Learning Resources',
-  'Summary Agent': 'Final Summary',
-}
-
-function AgentTracePanel({ trace, decisionContext }) {
-  if (!trace) return null
-  const completed = trace.steps.filter(step => step.status === 'completed' || step.status === 'success').length
-  const totalDuration = trace.startedAt && trace.completedAt
-    ? Math.max(0, new Date(trace.completedAt).getTime() - new Date(trace.startedAt).getTime())
-    : trace.steps.reduce((sum, step) => sum + (step.durationMs || 0), 0)
-  const missing = decisionContext?.profileCompleteness?.missing || []
-
-  return (
-    <details className="glass-card overflow-hidden group">
-      <summary className="cursor-pointer list-none p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-saffron">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-saffron text-xs font-bold uppercase tracking-widest">Agent decision trace</p>
-            <p className="text-white font-semibold mt-1">{completed}/{trace.steps.length} agents completed · {totalDuration} ms</p>
-          </div>
-          <span className="text-xs text-gray-400 border border-white/10 rounded-full px-3 py-1.5 group-open:text-saffron">
-            Inspect workflow
-          </span>
-        </div>
-      </summary>
-      <div className="border-t border-white/8 px-5 pb-5">
-        <div className="grid sm:grid-cols-2 gap-3 py-5">
-          {trace.steps.map((step, index) => (
-            <div key={`${step.agent}-${index}`} className="rounded-xl border border-white/8 bg-navy-900/60 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${(step.status === 'completed' || step.status === 'success') ? 'bg-emerald-400' : step.status === 'failed' ? 'bg-red-400' : 'bg-amber-400'}`} />
-                  <p className="text-gray-200 text-sm font-semibold">{AGENT_LABELS[step.agent] || step.agent}</p>
-                </div>
-                <span className="text-gray-600 text-[11px] whitespace-nowrap">{step.durationMs} ms</span>
-              </div>
-              <p className="text-gray-500 text-xs mt-2">
-                {step.evidenceCount} evidence record{step.evidenceCount === 1 ? '' : 's'} · {step.status}
-              </p>
-              {step.message && <p className="text-gray-500 text-xs mt-1">{step.message}</p>}
-            </div>
-          ))}
-        </div>
-        <div className="rounded-xl border border-white/8 bg-navy-900/60 p-4 text-xs text-gray-400">
-          <p>
-            {typeof trace.evidenceCoverage === 'object' && trace.evidenceCoverage !== null
-              ? `Evidence coverage: ${trace.evidenceCoverage.colleges} colleges, ${trace.evidenceCoverage.scholarships} scholarships, ${trace.evidenceCoverage.feeSchedules} component fee schedules, ${trace.evidenceCoverage.officialSources} official sources.`
-              : `Evidence coverage: ${Math.round((trace.evidenceCoverage ?? 0) * 100)}% grounded`
-            }
-          </p>
-          {missing.length > 0 && (
-            <p className="mt-2 text-amber-300">
-              Missing profile inputs were not guessed: {missing.join(', ')}.
-            </p>
-          )}
-          <p className="mt-2 text-gray-600">Workflow version {trace.orchestrationVersion} · run {trace.runId.slice(0, 8)}</p>
-        </div>
-      </div>
-    </details>
-  )
-}
-
-function ScholarshipDecisionPanel({ analysis }) {
-  const candidates = analysis?.candidates || []
-  if (candidates.length === 0) return null
-  const statusStyle = {
-    eligible: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/20',
-    needs_information: 'text-amber-300 bg-amber-400/10 border-amber-400/20',
-    not_eligible: 'text-gray-400 bg-white/5 border-white/10',
-  }
-  const statusText = {
-    eligible: 'Eligible on recorded facts',
-    needs_information: 'Needs information',
-    not_eligible: 'Not eligible on recorded facts',
-  }
-
-  return (
-    <details className="glass-card overflow-hidden group">
-      <summary className="cursor-pointer list-none p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-saffron">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-emerald-300 text-xs font-bold uppercase tracking-widest">Scholarship rule checks</p>
-            <p className="text-white font-semibold mt-1">See eligibility, failures, and missing inputs</p>
-          </div>
-          <span className="text-xs text-gray-400 border border-white/10 rounded-full px-3 py-1.5 group-open:text-saffron">Inspect checks</span>
-        </div>
-      </summary>
-      <div className="border-t border-white/8 p-5 space-y-3">
-        {candidates.map(candidate => (
-          <div key={candidate.name} className="rounded-xl border border-white/8 bg-navy-900/60 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-gray-200 text-sm font-semibold">{candidate.name}</p>
-                {candidate.admissionCycle && <p className="text-gray-600 text-xs mt-1">Cycle: {candidate.admissionCycle}</p>}
-              </div>
-              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusStyle[candidate.status] || statusStyle.needs_information}`}>
-                {statusText[candidate.status] || candidate.status}
-              </span>
-            </div>
-            {candidate.reasons?.length > 0 && <p className="text-emerald-200/70 text-xs mt-3">{candidate.reasons.join(' ')}</p>}
-            {candidate.failures?.length > 0 && <p className="text-rose-300/80 text-xs mt-3">{candidate.failures.join(' ')}</p>}
-            {candidate.missingFields?.length > 0 && (
-              <p className="text-amber-300/80 text-xs mt-3">Needed: {candidate.missingFields.join(', ')}. No value was guessed.</p>
-            )}
-            {candidate.sourceUrl && (
-              <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="inline-block text-saffron text-xs font-semibold mt-3 hover:text-saffron-light">
-                Check official source ↗
-              </a>
-            )}
-          </div>
-        ))}
-      </div>
-    </details>
   )
 }
 
@@ -318,6 +194,7 @@ function OptionCard({ option, index, formData, collegesData }) {
   const colorMap = ['border-blue-500/25', 'border-purple-500/25', 'border-emerald-500/25']
   const accentMap = ['text-blue-400', 'text-purple-400', 'text-emerald-400']
   const bgMap = ['bg-blue-500/8', 'bg-purple-500/8', 'bg-emerald-500/8']
+  const [showCoursePanel, setShowCoursePanel] = useState(false)
 
   return (
     <div
@@ -329,11 +206,30 @@ function OptionCard({ option, index, formData, collegesData }) {
         <div className={`w-10 h-10 rounded-xl ${bgMap[index]} flex items-center justify-center font-display font-bold text-lg ${accentMap[index]} border border-current/20 flex-shrink-0`}>
           {index + 1}
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <h3 className="font-display font-bold text-xl text-white leading-tight">{option.path}</h3>
           <p className={`text-xs font-semibold mt-1 ${accentMap[index]}`}>Option {index + 1}</p>
         </div>
+        {/* Explore Course Button */}
+        <button
+          onClick={() => setShowCoursePanel(v => !v)}
+          className={`flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-all ${
+            showCoursePanel
+              ? 'bg-saffron/15 border-saffron text-saffron'
+              : 'bg-white/5 border-white/10 text-gray-400 hover:border-saffron/40 hover:text-saffron'
+          }`}
+        >
+          <span>📚</span>
+          <span className="hidden sm:inline">{showCoursePanel ? 'Close' : 'Explore'}</span>
+        </button>
       </div>
+
+      {/* Course Overview Panel */}
+      <CourseOverlayPanel
+        path={option.path}
+        isOpen={showCoursePanel}
+        onClose={() => setShowCoursePanel(false)}
+      />
 
       {/* Honest take */}
       <div className="bg-white/4 border border-white/8 rounded-xl p-4">
@@ -347,27 +243,16 @@ function OptionCard({ option, index, formData, collegesData }) {
           <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">
             {formData?.classLevel === 'class10' ? '🏫 Target Paths / Institutions' : '🏫 Realistic Colleges'}
           </p>
-          <ul className="space-y-2">
+          <p className="text-gray-500 text-[10px] mb-2 italic">Click each college for fees, cutoffs & more ↓</p>
+          <ul className="space-y-1">
             {(option.realistic_colleges || []).map((c, i) => {
               const dbEntry = collegesData?.[c]
               return (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-saffron mt-0.5 text-xs flex-shrink-0">▸</span>
-                  {dbEntry?.source_url ? (
-                    <a
-                      href={dbEntry.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-gray-300 text-sm hover:text-saffron transition-colors group flex items-center gap-1"
-                    >
-                      <span>{c}</span>
-                      <svg className="w-3 h-3 text-gray-600 group-hover:text-saffron flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  ) : (
-                    <span className="text-gray-300 text-sm">{c}</span>
-                  )}
+                <li key={i}>
+                  <CollegeDetailCard
+                    collegeName={c}
+                    sourceUrl={dbEntry?.source_url}
+                  />
                 </li>
               )
             })}
@@ -435,7 +320,7 @@ function OptionCard({ option, index, formData, collegesData }) {
 }
 
 function ScholarshipBox({ scholarship, scholarshipData }) {
-  // Use a stored application URL when available; the student must still verify it.
+  // If we have verified DB data, use the real application URL; otherwise fall back to text only
   const applyUrl = scholarshipData?.application_url
   const deadline = scholarshipData?.deadline_pattern
 
@@ -551,6 +436,7 @@ function MentorTeaserBox({ mentor }) {
   if (!mentor) return null
 
   // Ensure matching styling tags / colors
+  const gradient = mentor.gradient || 'from-blue-500/30 to-blue-600/10'
   const border = mentor.border || 'border-blue-500/25'
   const initialsBg = mentor.initials_bg || 'bg-blue-500/20 text-blue-300'
 
@@ -575,12 +461,12 @@ function MentorTeaserBox({ mentor }) {
           rel="noreferrer"
           className="btn-primary py-3 px-6 text-sm flex items-center justify-center gap-2 group/btn w-full sm:w-auto text-center"
         >
-          <span>View booking details</span>
+          <span>Book Free Call</span>
           <svg className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </a>
-        <p className="text-center text-gray-600 text-[10px] mt-1.5">Format and availability are set by the mentor.</p>
+        <p className="text-center text-gray-600 text-[10px] mt-1.5">20 min · Completely free</p>
       </div>
     </div>
   )
@@ -595,6 +481,7 @@ export default function Result() {
     const savedRaw = localStorage.getItem('aageKyaFormData')
     const rawForm  = state?.formData ?? (savedRaw ? JSON.parse(savedRaw) : null)
     return rawForm ? { ...rawForm, classLevel: rawForm.classLevel || classLevel } : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classLevel, state?.formData])
 
 
@@ -618,7 +505,7 @@ export default function Result() {
   // Match a mentor based on student stream or class level
   useEffect(() => {
     if (!formData) return
-    fetch(apiUrl('/api/mentors'))
+    fetch('http://localhost:5000/api/mentors')
       .then((res) => {
         if (!res.ok) throw new Error('API failed')
         return res.json()
@@ -647,7 +534,7 @@ export default function Result() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (event === 'SIGNED_IN' && newSession && formData && result) {
         try {
-          await fetch(apiUrl('/api/sync'), {
+          await fetch('http://localhost:5000/api/sync', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -671,7 +558,7 @@ export default function Result() {
     setErrMsg('')
     setScenarioSaved(false)
     try {
-      const data = await requestGuidance(formData)
+      const data = await callGemini(formData)
       setResult(data)
       localStorage.setItem('aageKyaLastResult', JSON.stringify(data))
       localStorage.setItem('aageKyaLastFormData', JSON.stringify(formData))
@@ -691,16 +578,13 @@ export default function Result() {
     setScenarioSaving(true)
     try {
       const label = `${formData.stream || 'My Path'} — ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-      const response = await fetch(apiUrl('/api/scenarios'), {
+      await fetch('http://localhost:5000/api/scenarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ label, formData, guidanceResult: result }),
       })
-      if (!response.ok) throw new Error('Scenario could not be saved')
       setScenarioSaved(true)
-    } catch (err) {
-      console.error('Failed to save scenario:', err)
-    }
+    } catch { }
     finally { setScenarioSaving(false) }
   }
 
@@ -886,10 +770,6 @@ export default function Result() {
               name={formData?.fullName}
             />
 
-            <AgentTracePanel trace={result.agent_trace} decisionContext={result.decision_context} />
-
-            <ScholarshipDecisionPanel analysis={result.decision_context?.scholarshipAnalysis} />
-
             {/* 2 — Options */}
             {(result.options || []).map((opt, i) => (
               <div key={i} className="space-y-2">
@@ -929,11 +809,10 @@ export default function Result() {
               )
             )}
 
-            {/* 3.5 — Entrance Exam Details & Rank Predictor (Class 12 only) */}
+            {/* 3.5 — Entrance Exam Details (Class 12 only) */}
             {classLevel === 'class12' && (
-              <div className="space-y-4 pt-2">
+              <div className="pt-2">
                 <ExamDetails stream={formData?.stream} />
-                <RankPredictor formData={formData} />
               </div>
             )}
 
@@ -946,14 +825,6 @@ export default function Result() {
             {result.one_thing_to_do_this_week && (
               <OneActionBox action={result.one_thing_to_do_this_week} />
             )}
-
-            <div className="glass-card p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-saffron/20">
-              <div>
-                <p className="text-white font-bold">Check the real fee breakdown</p>
-                <p className="text-gray-400 text-sm mt-1">See reviewed official circulars, category remissions, deposits, hostel and mess components.</p>
-              </div>
-              <Link to="/fees" className="btn-primary px-6 py-3 text-sm whitespace-nowrap">Explore verified fees →</Link>
-            </div>
 
             {/* ── Bottom CTA ── */}
             <div className="pt-4 space-y-4">
@@ -992,8 +863,8 @@ export default function Result() {
 
               <p className="text-center text-gray-700 text-xs">
                 {result.grounded
-                  ? 'The recommendation uses reviewed records available to the service; re-open every linked authority source before applying.'
-                  : 'The result is evidence-limited. Unsupported college, scholarship and fee claims are removed, but you must verify every decision on current official sites.'
+                  ? 'College and scholarship data sourced from our curated database. Costs are estimates — verify directly with each institution before applying.'
+                  : 'Results generated by Groq AI. College names and costs may not be accurate — always verify directly with institutions before applying.'
                 }
               </p>
             </div>

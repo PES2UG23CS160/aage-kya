@@ -224,7 +224,7 @@ function StageDetail({ stage, pathId }) {
       </div>
 
       {/* YouTubePanel for career roadmap video guidance */}
-      <YouTubePanel topic={pathId} title={`Curated Video Guide for ${stage.label}`} />
+      <YouTubePanel topic={[`${pathId}_${stage.id}`, pathId]} title={`Curated Video Guide for ${stage.label}`} />
     </motion.div>
   )
 }
@@ -321,16 +321,86 @@ export default function CareerPipeline() {
   const [selectedPath, setSelectedPath] = useState(null)
   const [activeStageIdx, setActiveStageIdx] = useState(0)
 
+  // Profile-based state
+  const [profile, setProfile] = useState(() => {
+    try {
+      const data = localStorage.getItem('aageKyaFormData')
+      return data ? JSON.parse(data) : null
+    } catch (_) {
+      return null
+    }
+  })
+
+  // Dynamic Career Path generator state
+  const [careerPathsList, setCareerPathsList] = useState(CAREER_PATHS)
+  const [customProfession, setCustomProfession] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(null)
+
   // Catalog state
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
 
-  const path = CAREER_PATHS.find(p => p.id === selectedPath)
+  const path = careerPathsList.find(p => p.id === selectedPath)
 
   const handlePathSwitch = useCallback((pathId) => {
     setSelectedPath(pathId)
     setActiveStageIdx(0)
   }, [])
+
+  const isRecommended = useCallback((pId, stream) => {
+    if (!stream) return false
+    const lowerStream = stream.toLowerCase()
+    if (lowerStream.includes('pcm')) {
+      return pId === 'software_engineer' || pId === 'data_scientist'
+    }
+    if (lowerStream.includes('pcb')) {
+      return pId === 'doctor'
+    }
+    if (lowerStream.includes('commerce')) {
+      return pId === 'ca'
+    }
+    if (lowerStream.includes('arts') || lowerStream.includes('humanities')) {
+      return pId === 'designer' || pId === 'civil_services'
+    }
+    return false
+  }, [])
+
+  const handleGenerateCustomPath = async (e) => {
+    e.preventDefault()
+    if (!customProfession.trim()) return
+    setGenerating(true)
+    setGenError(null)
+
+    try {
+      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const res = await fetch(`${backendUrl}/api/generate-career-path`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          profession: customProfession.trim(),
+          formData: profile
+        })
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to generate career path roadmap')
+      }
+
+      const newPath = await res.json()
+      // Prepend to current list and select it
+      setCareerPathsList(prev => [newPath, ...prev])
+      setSelectedPath(newPath.id)
+      setActiveStageIdx(0)
+      setCustomProfession('')
+    } catch (err) {
+      setGenError(err.message || 'Something went wrong. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   // Filter courses
   const filteredCourses = useMemo(() => {
@@ -417,9 +487,111 @@ export default function CareerPipeline() {
 
         {activeTab === 'roadmaps' ? (
           <>
+            {/* Custom AI Career Generator */}
+            <div className="glass-card-premium p-6 border-saffron/20 bg-saffron/5 rounded-2xl mb-8 text-left relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-saffron/10 rounded-full filter blur-xl pointer-events-none" />
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                  <h3 className="font-display font-bold text-white text-lg flex items-center gap-2">
+                    <span>✨</span> AI Custom Career Path Generator
+                  </h3>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Type any profession in the world, and our AI will build a personalized step-by-step career path for you.
+                  </p>
+                  
+                  {/* Quick click suggestions based on profile */}
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
+                    <span className="text-xs text-gray-500 font-medium">Try these:</span>
+                    {profile?.stream?.toLowerCase().includes('pcm') ? (
+                      <>
+                        {['Robotics Engineer', 'Cybersecurity Specialist', 'Game Developer'].map(sug => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => setCustomProfession(sug)}
+                            className="px-2.5 py-1 rounded-lg text-xs bg-white/5 hover:bg-white/10 text-gray-300 transition-all border border-white/5"
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </>
+                    ) : profile?.stream?.toLowerCase().includes('pcb') ? (
+                      <>
+                        {['Geneticist', 'Pharmacologist', 'Clinical Research'].map(sug => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => setCustomProfession(sug)}
+                            className="px-2.5 py-1 rounded-lg text-xs bg-white/5 hover:bg-white/10 text-gray-300 transition-all border border-white/5"
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </>
+                    ) : profile?.stream?.toLowerCase().includes('commerce') ? (
+                      <>
+                        {['Investment Banker', 'Stock Analyst', 'Actuary'].map(sug => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => setCustomProfession(sug)}
+                            className="px-2.5 py-1 rounded-lg text-xs bg-white/5 hover:bg-white/10 text-gray-300 transition-all border border-white/5"
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {['UX Researcher', 'Digital Marketer', 'Content Strategist'].map(sug => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => setCustomProfession(sug)}
+                            className="px-2.5 py-1 rounded-lg text-xs bg-white/5 hover:bg-white/10 text-gray-300 transition-all border border-white/5"
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <form onSubmit={handleGenerateCustomPath} className="w-full md:max-w-md flex gap-2 flex-shrink-0">
+                  <input
+                    type="text"
+                    required
+                    value={customProfession}
+                    onChange={(e) => setCustomProfession(e.target.value)}
+                    placeholder="e.g. Space Scientist, Chef, Ethical Hacker..."
+                    className="flex-1 bg-[#111827]/80 border border-white/10 hover:border-white/20 focus:border-saffron/60 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm transition-all outline-none focus:ring-2 focus:ring-saffron/30"
+                  />
+                  <button
+                    type="submit"
+                    disabled={generating}
+                    className="btn-primary text-sm px-5 py-2.5 flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r from-saffron to-amber-500 hover:from-saffron-dark hover:to-amber-600 shadow-md shadow-saffron/25"
+                  >
+                    {generating ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡ Generate</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+              {genError && (
+                <p className="mt-3 text-xs text-rose-400 font-medium">⚠️ {genError}</p>
+              )}
+            </div>
+
             {/* Career Path Selection */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-12">
-              {CAREER_PATHS.map((p, i) => (
+              {careerPathsList.map((p, i) => (
                 <motion.button
                   key={p.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -428,10 +600,15 @@ export default function CareerPipeline() {
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => handlePathSwitch(p.id)}
-                  className={`p-5 rounded-2xl border text-left bg-gradient-to-br ${p.color} transition-all duration-300 ${
+                  className={`p-5 rounded-2xl border text-left bg-gradient-to-br ${p.color} transition-all duration-300 relative ${
                     selectedPath === p.id ? 'ring-2 ring-saffron/50 border-saffron/30' : 'border-white/10'
                   }`}
                 >
+                  {profile && isRecommended(p.id, profile.stream) && (
+                    <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md text-[8px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      🎯 Recommended
+                    </span>
+                  )}
                   <span className="text-3xl">{p.icon}</span>
                   <h3 className="font-display font-bold text-white text-sm mt-2">{p.title}</h3>
                 </motion.button>
