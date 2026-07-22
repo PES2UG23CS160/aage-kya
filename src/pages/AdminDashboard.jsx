@@ -5,10 +5,9 @@ import { supabase } from '../supabaseClient'
 
 export default function AdminDashboard() {
   const { session, profile } = useAuth()
-  const [activeTab, setActiveTab] = useState('analytics') // 'analytics' | 'mentors' | 'feedback' | 'users'
+  const [activeTab, setActiveTab] = useState('analytics') // 'analytics' | 'mentors' | 'users'
   const [analytics, setAnalytics] = useState(null)
   const [applications, setApplications] = useState([])
-  const [feedback, setFeedback] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
@@ -35,15 +34,11 @@ export default function AdminDashboard() {
       const appsRes = await fetch('/api/admin/mentor-applications', { headers })
       const appsData = await appsRes.json()
 
-      const feedbackRes = await fetch('/api/admin/course-feedback', { headers })
-      const feedbackData = await feedbackRes.json()
-
       // Fetch users from Supabase directly
       const { data: usersData } = await supabase.from('students').select('id, full_name, role, class_level, created_at, marks, stream, state').order('created_at', { ascending: false }).limit(100)
 
       setAnalytics(analyticsData)
       setApplications(appsData.applications || [])
-      setFeedback(feedbackData.feedback || [])
       setUsers(usersData || [])
     } catch (err) {
       console.error('Error fetching admin data:', err)
@@ -91,41 +86,7 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleApproveFeedback = async (id) => {
-    setActionLoading(id)
-    try {
-      const res = await fetch(`/api/admin/course-feedback/${id}/approve`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to approve feedback')
-      await fetchAllData()
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleDeleteFeedback = async (id) => {
-    if (!confirm('Are you sure you want to delete this feedback?')) return
-    setActionLoading(id)
-    try {
-      const res = await fetch(`/api/admin/course-feedback/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to delete feedback')
-      await fetchAllData()
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
   const pendingMentors = applications.filter(a => a.status === 'pending')
-  const pendingFeedback = feedback.filter(f => !f.approved)
 
   // ── Render Charts ────────────────────────────────────────────
   const renderStreamChart = () => {
@@ -206,7 +167,7 @@ export default function AdminDashboard() {
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-saffron/40 to-transparent" />
           <h1 className="font-display text-3xl font-extrabold text-white sm:text-4xl">Admin Control Panel</h1>
           <p className="mt-2 text-gray-400 max-w-2xl text-sm leading-relaxed">
-            Monitor platform metrics, approve student mentor applications, and moderate submitted course feedback.
+            Monitor platform metrics, review and verify student mentor applications, and manage registered users.
           </p>
         </div>
 
@@ -217,7 +178,7 @@ export default function AdminDashboard() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 gap-5 mb-8">
           <div className="glass-card border-white/5 p-6 flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl text-indigo-400">
               👥
@@ -247,16 +208,6 @@ export default function AdminDashboard() {
               <h3 className="text-2xl font-bold text-white mt-0.5">{pendingMentors.length}</h3>
             </div>
           </div>
-
-          <div className="glass-card border-white/5 p-6 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl text-emerald-400">
-              💬
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pending Feedback</p>
-              <h3 className="text-2xl font-bold text-white mt-0.5">{pendingFeedback.length}</h3>
-            </div>
-          </div>
         </div>
 
         {/* Tab switchers */}
@@ -264,7 +215,6 @@ export default function AdminDashboard() {
           {[
             { id: 'analytics', label: '📊 Analytics' },
             { id: 'mentors', label: `🌟 Mentors (${pendingMentors.length})` },
-            { id: 'feedback', label: `💬 Feedback (${pendingFeedback.length})` },
             { id: 'users', label: `👥 Users (${users.length})` },
           ].map(t => (
             <button
@@ -343,25 +293,55 @@ export default function AdminDashboard() {
                           <div className="flex justify-between items-start mb-4">
                             <div>
                               <h4 className="font-display text-base font-bold text-white">{app.name}</h4>
+                              <p className="text-xs text-saffron font-semibold mt-0.5">{app.profession || 'Mentor Applicant'}</p>
                               <p className="text-xs text-gray-400">{app.email}</p>
                             </div>
-                            <span className="bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                              Pending
+                            <span className="bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
+                              Pending Review
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3 text-xs mb-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                          <div className="grid grid-cols-2 gap-3 text-xs mb-4 p-3.5 bg-white/5 rounded-xl border border-white/5">
                             <div>
-                              <span className="text-gray-400">College:</span>
-                              <p className="text-white font-medium truncate mt-0.5">{app.college}</p>
+                              <span className="text-gray-400 block text-[11px]">College & Degree:</span>
+                              <p className="text-white font-medium truncate mt-0.5">{app.college || 'N/A'}</p>
+                              <p className="text-gray-400 text-[11px] truncate">{app.degree || 'N/A'}</p>
                             </div>
                             <div>
-                              <span className="text-gray-400">Degree:</span>
-                              <p className="text-white font-medium truncate mt-0.5">{app.degree}</p>
+                              <span className="text-gray-400 block text-[11px]">Expertise & Exp:</span>
+                              <p className="text-white font-medium truncate mt-0.5">{app.stream_category || 'General'}</p>
+                              <p className="text-amber-400 text-[11px] font-semibold">{app.experience_years ? `${app.experience_years} yrs exp` : 'Fresh Graduate'}</p>
                             </div>
                           </div>
 
-                          <div className="text-xs text-gray-300 leading-relaxed mb-6">
+                          {/* Verification Links */}
+                          <div className="flex flex-wrap gap-3 mb-4 text-xs">
+                            {app.linkedin ? (
+                              <a
+                                href={app.linkedin.startsWith('http') ? app.linkedin : `https://${app.linkedin}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-300 hover:bg-blue-500/20 transition-all font-semibold"
+                              >
+                                🔗 Verify LinkedIn Profile ↗
+                              </a>
+                            ) : (
+                              <span className="text-gray-500 text-xs italic">No LinkedIn provided</span>
+                            )}
+
+                            {app.cal_link && (
+                              <a
+                                href={app.cal_link.startsWith('http') ? app.cal_link : `https://${app.cal_link}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20 transition-all font-semibold"
+                              >
+                                📅 Cal.com Booking Link ↗
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-gray-300 leading-relaxed mb-6 bg-white/[0.02] p-3 rounded-xl border border-white/5">
                             <span className="text-gray-400 block font-semibold mb-1">Background Story / Motivation:</span>
                             "{app.story}"
                           </div>
@@ -373,7 +353,7 @@ export default function AdminDashboard() {
                             disabled={actionLoading === app.id}
                             className="flex-1 btn-primary py-2.5 text-xs bg-emerald-600 hover:bg-emerald-500 border-emerald-500/30 text-white disabled:opacity-50"
                           >
-                            {actionLoading === app.id ? 'Processing...' : '✅ Approve'}
+                            {actionLoading === app.id ? 'Processing...' : '✅ Approve Mentor'}
                           </button>
                           <button
                             onClick={() => handleRejectMentor(app.id)}
@@ -381,56 +361,6 @@ export default function AdminDashboard() {
                             className="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 text-rose-300 transition-all text-center disabled:opacity-50"
                           >
                             {actionLoading === app.id ? 'Processing...' : '❌ Reject'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Tab: Feedback ── */}
-            {activeTab === 'feedback' && (
-              <div className="space-y-4">
-                <h3 className="font-display text-lg font-bold text-white mb-2">Pending Course Feedback</h3>
-                {pendingFeedback.length === 0 ? (
-                  <div className="glass-card border-white/5 p-12 text-center text-gray-400 text-sm">
-                    ✨ No pending course feedback entries to moderate.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {pendingFeedback.map((fb) => (
-                      <div key={fb.id} className="glass-card border-white/5 p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="bg-saffron/10 text-saffron border border-saffron/20 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              {fb.stream_key}
-                            </span>
-                            <span className="text-gray-500 text-xs">
-                              Author: {fb.author_id ? fb.author_id.slice(0, 8) + '...' : 'Anonymous'}
-                            </span>
-                            <span className="text-gray-500 text-[10px]">
-                              {new Date(fb.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-300 leading-relaxed">"{fb.content}"</p>
-                        </div>
-
-                        <div className="flex gap-2 w-full md:w-auto shrink-0 border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
-                          <button
-                            onClick={() => handleApproveFeedback(fb.id)}
-                            disabled={actionLoading === fb.id}
-                            className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/30 text-white rounded-xl text-xs font-semibold disabled:opacity-50 transition-all"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleDeleteFeedback(fb.id)}
-                            disabled={actionLoading === fb.id}
-                            className="flex-1 md:flex-none px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-300 rounded-xl text-xs font-semibold disabled:opacity-50 transition-all"
-                          >
-                            Delete
                           </button>
                         </div>
                       </div>

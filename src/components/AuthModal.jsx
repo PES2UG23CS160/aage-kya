@@ -24,11 +24,13 @@ export default function AuthModal({ isOpen, onClose }) {
 
   if (!isOpen) return null
 
-  const handleDemoLogin = (role) => {
-    loginAsDemo(role, email)
+  const handleDemoLogin = (role, classLevel = 'class12') => {
+    loginAsDemo(role, email, classLevel)
     onClose()
     if (role === 'admin') {
       navigate('/admin-dashboard')
+    } else if (role === 'mentor') {
+      navigate('/mentor-dashboard')
     } else {
       navigate('/dashboard')
     }
@@ -343,20 +345,29 @@ export default function AuthModal({ isOpen, onClose }) {
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
                 <span className="relative z-10 px-3 bg-[#111827] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Demo Sandbox Bypass</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDemoLogin('student', 'class10')}
+                    className="py-2.5 rounded-xl border border-white/10 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold transition-all duration-200"
+                  >
+                    ⚡ Student (10th)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDemoLogin('student', 'class12')}
+                    className="py-2.5 rounded-xl border border-white/10 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold transition-all duration-200"
+                  >
+                    ⚡ Student (12th)
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => handleDemoLogin('student')}
-                  className="py-2.5 rounded-xl border border-white/10 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold transition-all duration-200"
+                  onClick={() => handleDemoLogin('mentor')}
+                  className="w-full py-2.5 rounded-xl border border-white/10 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-semibold transition-all duration-200"
                 >
-                  ⚡ Student Demo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('admin')}
-                  className="py-2.5 rounded-xl border border-white/10 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-semibold transition-all duration-200"
-                >
-                  ⚡ Admin Demo
+                  ⚡ Mentor Demo
                 </button>
               </div>
             </>

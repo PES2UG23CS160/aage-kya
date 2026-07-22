@@ -12,9 +12,8 @@ const CAREER_PATHS = [
     color: 'from-blue-500/20 to-indigo-500/10',
     stages: [
       { id: 'current', label: 'Current Stage', icon: '📍', desc: 'Class 10/12 Student', skills: ['Basic Math', 'Logical Thinking', 'English Communication'], certs: [], salary: 'N/A', demand: 'N/A', next: ['Choose PCM stream', 'Learn basics of programming'] },
-      { id: 'education', label: 'Education', icon: '🎓', desc: 'B.Tech CSE / BCA / B.Sc CS', skills: ['Data Structures', 'Algorithms', 'OOP', 'Databases'], certs: ['NPTEL Programming', 'HackerRank Certification'], salary: 'N/A', demand: 'Very High', next: ['Prepare for JEE/KCET', 'Start coding on LeetCode'] },
-      { id: 'entrance', label: 'Entrance Exams', icon: '📝', desc: 'JEE Main / KCET / COMEDK / Direct', skills: ['Problem Solving', 'Time Management', 'Physics + Math'], certs: [], salary: 'N/A', demand: 'Very High', next: ['Practice mock tests', 'Join coaching if needed'] },
-      { id: 'college', label: 'College', icon: '🏫', desc: '4-year B.Tech or 3-year BCA', skills: ['Full Stack Dev', 'System Design', 'Git & DevOps', 'Cloud Computing'], certs: ['AWS Cloud Practitioner', 'Google IT Support'], salary: 'N/A', demand: 'Very High', next: ['Build 5+ projects', 'Contribute to open source'] },
+      { id: 'entrance', label: 'Entrance Exams', icon: '📝', desc: 'JEE Main / KCET / COMEDK / Direct', skills: ['Problem Solving', 'Time Management', 'Physics + Math'], certs: [], salary: 'N/A', demand: 'Very High', next: ['Practice mock tests', 'Join coaching if needed', 'Prepare for JEE/KCET'] },
+      { id: 'college', label: 'College', icon: '🏫', desc: '4-year B.Tech CSE or 3-year BCA / B.Sc CS', skills: ['Data Structures', 'Algorithms', 'OOP', 'Full Stack Dev', 'System Design', 'Git & DevOps'], certs: ['NPTEL Programming', 'AWS Cloud Practitioner', 'Google IT Support'], salary: 'N/A', demand: 'Very High', next: ['Build 5+ projects', 'Contribute to open source', 'Start coding on LeetCode'] },
       { id: 'internship', label: 'Internships', icon: '💼', desc: '2-6 month industry internship', skills: ['Team Collaboration', 'Agile/Scrum', 'Code Review', 'Testing'], certs: ['Coursera Specialization'], salary: '₹10K–₹40K/month', demand: 'Very High', next: ['Apply via LinkedIn/AngelList', 'Network at tech meetups'] },
       { id: 'first_job', label: 'First Job', icon: '🚀', desc: 'Junior/Associate Software Engineer', skills: ['React/Angular', 'Node.js/Python', 'SQL', 'REST APIs'], certs: ['Meta Front-End Developer', 'Google Data Analytics'], salary: '₹4–12 LPA', demand: 'Very High', next: ['Focus on one tech stack', 'Build side projects'] },
       { id: 'mid_career', label: 'Mid Career', icon: '📈', desc: 'Senior Engineer / Tech Lead', skills: ['System Architecture', 'Mentoring', 'Performance Optimization'], certs: ['AWS Solutions Architect', 'Kubernetes'], salary: '₹15–35 LPA', demand: 'High', next: ['Lead projects', 'Speak at conferences'] },
@@ -28,9 +27,8 @@ const CAREER_PATHS = [
     color: 'from-purple-500/20 to-violet-500/10',
     stages: [
       { id: 'current', label: 'Current Stage', icon: '📍', desc: 'Student with Math aptitude', skills: ['Statistics Basics', 'Excel', 'Logical Reasoning'], certs: [], salary: 'N/A', demand: 'N/A', next: ['Focus on Math & Statistics', 'Learn Python basics'] },
-      { id: 'education', label: 'Education', icon: '🎓', desc: 'B.Tech CSE/IT or B.Sc Statistics/Math', skills: ['Linear Algebra', 'Probability', 'Python', 'R'], certs: ['Coursera ML Specialization'], salary: 'N/A', demand: 'Very High', next: ['Take online ML courses', 'Practice on Kaggle'] },
       { id: 'entrance', label: 'Entrance Exams', icon: '📝', desc: 'JEE / CUET / University Entrance', skills: ['Math + Science', 'Quantitative Aptitude'], certs: [], salary: 'N/A', demand: 'Very High', next: ['Focus on math sections', 'Build analysis portfolio'] },
-      { id: 'college', label: 'College', icon: '🏫', desc: '4-year degree with Data Science focus', skills: ['Machine Learning', 'Deep Learning', 'NLP', 'Computer Vision'], certs: ['Google Data Analytics', 'IBM Data Science'], salary: 'N/A', demand: 'Very High', next: ['Kaggle competitions', 'Research papers'] },
+      { id: 'college', label: 'College', icon: '🏫', desc: '4-year B.Tech CSE/IT or B.Sc Statistics/Math/Data Science', skills: ['Linear Algebra', 'Probability', 'Python', 'Machine Learning', 'Deep Learning', 'NLP'], certs: ['Google Data Analytics', 'IBM Data Science', 'Coursera ML Specialization'], salary: 'N/A', demand: 'Very High', next: ['Kaggle competitions', 'Research papers', 'Take online ML courses'] },
       { id: 'internship', label: 'Internships', icon: '💼', desc: 'Data Analyst / ML Intern', skills: ['SQL', 'Tableau/PowerBI', 'A/B Testing', 'ETL'], certs: ['Tableau Desktop Specialist'], salary: '₹15K–₹50K/month', demand: 'Very High', next: ['Work on real datasets', 'Learn business context'] },
       { id: 'first_job', label: 'First Job', icon: '🚀', desc: 'Junior Data Scientist / Analyst', skills: ['Scikit-learn', 'TensorFlow/PyTorch', 'Feature Engineering'], certs: ['AWS ML Specialty'], salary: '₹6–15 LPA', demand: 'Very High', next: ['Specialize in a domain', 'Publish on Medium/GitHub'] },
       { id: 'mid_career', label: 'Mid Career', icon: '📈', desc: 'Senior Data Scientist / ML Engineer', skills: ['MLOps', 'Model Deployment', 'Research', 'Team Leadership'], certs: ['Google Cloud ML Engineer'], salary: '₹20–45 LPA', demand: 'High', next: ['Lead ML projects', 'Patent innovations'] },
@@ -224,7 +222,7 @@ function StageDetail({ stage, pathId }) {
       </div>
 
       {/* YouTubePanel for career roadmap video guidance */}
-      <YouTubePanel topic={[`${pathId}_${stage.id}`, pathId]} title={`Curated Video Guide for ${stage.label}`} />
+      <YouTubePanel topic={[`${pathId}_${stage.id}`, pathId]} stageId={stage.id} title={`Curated Video Guide for ${stage.label}`} />
     </motion.div>
   )
 }

@@ -18,7 +18,6 @@ export default function Navbar({ onSearchOpen }) {
     { to: '/scholarships', label: 'Scholarships' },
     { to: '/study-abroad', label: 'Abroad' },
     { to: '/mentors',    label: 'Mentors' },
-    { to: '/mentor-apply', label: '🌟 Become Mentor' },
   ]
   const [isOpen, setIsOpen]     = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
@@ -106,18 +105,6 @@ export default function Navbar({ onSearchOpen }) {
 
             {/* Desktop right side */}
             <div className="hidden md:flex items-center gap-2">
-              {/* Ctrl+K Search Trigger */}
-              <button
-                onClick={onSearchOpen}
-                className="flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 rounded-xl px-3 py-2 text-gray-400 hover:text-white transition-all duration-200 text-xs"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <span className="hidden lg:inline">Search</span>
-                <kbd className="hidden lg:inline text-[9px] bg-white/10 border border-white/15 px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
-              </button>
-
               {/* Universal Search */}
               <SearchBar isCompact />
 

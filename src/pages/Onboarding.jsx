@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import PrivacyConsentModal, { useConsent } from '../components/PrivacyConsentModal'
 import CourseReality from '../components/CourseReality'
+import { STREAM_VALUES } from '../config/streams'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -237,7 +238,7 @@ function CityCard({ option, selected, onToggle }) {
 
 function Step1({ form, setForm, errors, classLevel = 'class12' }) {
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
-  const streams = ['Science (PCM)', 'Science (PCB)', 'Commerce', 'Arts / Humanities']
+  const streams = STREAM_VALUES
 
   return (
     <div className="space-y-6">

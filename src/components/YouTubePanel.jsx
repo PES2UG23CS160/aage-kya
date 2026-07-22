@@ -48,11 +48,11 @@ const CURATED_VIDEOS = {
   // --- DATA SCIENTIST ---
   data_scientist_current: [
     { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
-    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+    { id: 'E3Q4s7x6Qlk', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
   data_scientist_education: [
     { id: 'ua-CiDNNj30', title: 'Data Science Degrees & Skill Roadmap', channel: 'Krish Naik' },
-    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+    { id: 'E3Q4s7x6Qlk', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
   data_scientist_entrance: [
     { id: 'nKW8Ndu7Mjw', title: 'JEE Main Preparation Plan 2024', channel: 'Physics Wallah' },
@@ -60,14 +60,14 @@ const CURATED_VIDEOS = {
   ],
   data_scientist_college: [
     { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
-    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+    { id: 'E3Q4s7x6Qlk', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
   data_scientist_internship: [
     { id: 'ua-CiDNNj30', title: 'How to Get a Data Science Internship', channel: 'Krish Naik' },
   ],
   data_scientist_first_job: [
     { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
-    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+    { id: 'E3Q4s7x6Qlk', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
   data_scientist_mid_career: [
     { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
@@ -78,7 +78,7 @@ const CURATED_VIDEOS = {
   data_scientist: [
     { id: 'ua-CiDNNj30', title: 'Data Science Career Roadmap India 2024', channel: 'Krish Naik' },
     { id: 'aircAruvnKk', title: 'How Neural Networks Work', channel: '3Blue1Brown' },
-    { id: 'k1uH3RlRNag', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
+    { id: 'E3Q4s7x6Qlk', title: 'AI/ML Career Path for Beginners', channel: 'Simplilearn' },
   ],
 
   // --- DOCTOR ---
@@ -140,7 +140,7 @@ const CURATED_VIDEOS = {
     { id: 'p323FK_ANic', title: 'How to Become a UX Designer for Beginners', channel: 'Ansh Mehra' },
   ],
   designer_education: [
-    { id: 'k1uH3RlRNag', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
+    { id: 'P3z_BtloU4M', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
   ],
   designer_internship: [
     { id: 'p323FK_ANic', title: 'How to Build UI/UX Design Portfolio', channel: 'Ansh Mehra' },
@@ -149,14 +149,14 @@ const CURATED_VIDEOS = {
     { id: 'p323FK_ANic', title: 'Getting your first UI/UX Job & Interviews', channel: 'Ansh Mehra' },
   ],
   designer_mid_career: [
-    { id: 'k1uH3RlRNag', title: 'Advanced UX Methods & Systems', channel: 'Simplilearn' },
+    { id: '5eJTA0FZOsc', title: 'Advanced UX Methods & Systems', channel: 'Simplilearn' },
   ],
   designer_senior: [
     { id: 'p323FK_ANic', title: 'Leadership in Design & AI Tools', channel: 'Ansh Mehra' },
   ],
   designer: [
     { id: 'p323FK_ANic', title: 'How to Become a UX Designer with Full Roadmap for Beginners', channel: 'Ansh Mehra' },
-    { id: 'k1uH3RlRNag', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
+    { id: 'P3z_BtloU4M', title: 'UI/UX Design Course for Beginners', channel: 'Simplilearn' },
   ],
 
   // --- CIVIL SERVICES ---
@@ -217,20 +217,55 @@ const CURATED_VIDEOS = {
   career_guidance: [
     { id: 'ua-CiDNNj30', title: 'How to Choose the Right Career - 2024', channel: 'TED-Ed' },
     { id: 'aircAruvnKk', title: '10 High-Paying Careers in India 2024', channel: 'Josh Talks' },
-    { id: 'k1uH3RlRNag', title: 'Emerging Careers Nobody Talks About', channel: 'Unstoppable' },
+    { id: 'FXjif1BzVhX', title: 'Emerging Careers & Skills of the Future', channel: 'Josh Talks' },
   ],
 }
 
-export function getVideosForTopic(topic) {
+export function getVideosForTopic(topic, stageId) {
   if (Array.isArray(topic)) {
     for (const t of topic) {
       if (CURATED_VIDEOS[t]) {
         return CURATED_VIDEOS[t]
       }
     }
-    return CURATED_VIDEOS['career_guidance']
+  } else if (CURATED_VIDEOS[topic]) {
+    return CURATED_VIDEOS[topic]
   }
-  return CURATED_VIDEOS[topic] || CURATED_VIDEOS['career_guidance']
+
+  // Fallback to stage-specific general videos if direct match fails
+  const stage = stageId || (Array.isArray(topic) ? topic[0].split('_').pop() : '')
+  if (stage === 'entrance') {
+    return [
+      { id: 'nKW8Ndu7Mjw', title: 'Top Strategies to Crack Competitive Entrance Exams in India', channel: 'Physics Wallah' },
+      { id: 'dpTFQSL9B9M', title: 'How to Handle Exam Pressure & Time Management', channel: 'MedPrep' },
+    ]
+  }
+  if (stage === 'college') {
+    return [
+      { id: 'ysEN5RaKOlA', title: 'How to Make the Most Out of Your College Life', channel: 'CodeWithHarry' },
+      { id: 'UXZRf2QF2jE', title: 'Government College vs Private College: The Truth', channel: 'Apni Kaksha' },
+    ]
+  }
+  if (stage === 'internship') {
+    return [
+      { id: 'cM4y_qF_z5Y', title: 'How to Secure Internships Without Prior Experience', channel: 'Love Babbar' },
+      { id: 'reh7_JwfgWc', title: 'Professional Resume Building Guide & Templates', channel: 'Fireship' },
+    ]
+  }
+  if (stage === 'first_job') {
+    return [
+      { id: 'jL6kZ6J3x9w', title: 'How to Prepare for Placement Interviews & Aptitude Tests', channel: 'Apna College' },
+      { id: 'cM4y_qF_z5Y', title: 'Job Search Strategies & Resume Preparation', channel: 'Love Babbar' },
+    ]
+  }
+  if (stage === 'senior' || stage === 'mid_career') {
+    return [
+      { id: 'reh7_JwfgWc', title: 'How to Transition to Senior and Leadership Roles', channel: 'Fireship' },
+      { id: 'UXZRf2QF2jE', title: 'Critical Leadership & Team Management Lessons', channel: 'Apni Kaksha' },
+    ]
+  }
+
+  return CURATED_VIDEOS['career_guidance']
 }
 
 function VideoCard({ video, index }) {
@@ -284,9 +319,9 @@ function VideoCard({ video, index }) {
   )
 }
 
-export default function YouTubePanel({ topic, title = 'Related Videos', className = '' }) {
+export default function YouTubePanel({ topic, stageId, title = 'Related Videos', className = '' }) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const videos = getVideosForTopic(topic)
+  const videos = getVideosForTopic(topic, stageId)
 
   return (
     <div className={`glass-card rounded-2xl border border-white/10 overflow-hidden ${className}`}>

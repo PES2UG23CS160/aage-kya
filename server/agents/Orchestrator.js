@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import Groq from 'groq-sdk'
+import { normalizeStream, streamsMatch } from '../config/streams.js'
+import { enforceGuidanceEvidence } from '../domain/verification/verifyEvidence.js'
 
 // Helper to check environment configuration
 const supabaseUrl = process.env.SUPABASE_URL || 'https://your-project-ref.supabase.co'
@@ -176,13 +178,28 @@ export async function runSearchRetrievalAgent(state) {
     }
 
     // Filter and score colleges
-    const scoredColleges = allColleges.filter(c => {
-      // Stream match: if student is class12, must match stream.
+    const normStudentStream = normalizeStream(stream)
+    const preStreamFilter = allColleges.filter(c => {
+      // Stream match for class12: compare normalized to avoid casing/whitespace drift.
       if (classLevel === 'class12' && stream) {
-        if (!c.streams || !c.streams.includes(stream)) return false
+        if (!c.streams || !c.streams.some(s => normalizeStream(s) === normStudentStream)) return false
       }
       return true
-    }).map(c => {
+    })
+
+    // Warn loudly if stream filtering produced zero colleges (indicates drift).
+    if (classLevel === 'class12' && stream && preStreamFilter.length === 0) {
+      console.warn(
+        `[RAG] Stream filter "${stream}" (normalized: "${normStudentStream}") matched 0 colleges — ` +
+        `check that Onboarding form values match the streams array in seed.js. Falling back to all colleges.`
+      )
+    }
+
+    const collegesForScoring = (classLevel === 'class12' && stream && preStreamFilter.length > 0)
+      ? preStreamFilter
+      : allColleges
+
+    const scoredColleges = collegesForScoring.map(c => {
       let score = 0
       
       // Marks check: within range?
@@ -298,11 +315,18 @@ export async function runCareerRecommendationAgent(state) {
     Student Stream: ${form.stream}
     Class Level: ${form.classLevel}
 
+    INTEREST INTERPRETATION GUIDELINE:
+    If a student enters design or visual/creative interests like 'poster', 'posters', 'designing', or 'sketching':
+    - Map them to modern, highly-employable professional design careers: Bachelor of Design (B.Des in Graphic Design, Communication Design, or UI/UX), B.Sc in Animation & VFX, or fields in Digital Marketing / Advertising.
+    - Do NOT recommend traditional fine arts (BFA in Painting, Sculpture, etc.) or music/songs/performing arts unless the student explicitly mentions performing arts, singing, or music.
+    - If they have a Science stream, B.Des, B.Arch, or tech-design fields (like UI/UX) are excellent options.
+
     Recommend 2-3 specific career tracks.
     Respond ONLY with a JSON object in this format:
     {
       "recommendations": [
         {
+          "path_id": "short_kebab_slug (e.g. btech_cs, mbbs_medicine, ca_finance, bsc_biotech). MUST be unique per path and <= 20 chars, lowercase letters and underscores only.",
           "path": "Career/Course name (e.g. B.Tech Computer Science, B.Sc Biotechnology)",
           "honest_take": "Brutally honest 2-sentence advice about difficulty, competition, and suitability.",
           "requires_entrance_exam": "Specific exam name or None",
@@ -323,6 +347,7 @@ export async function runCareerRecommendationAgent(state) {
       return {
         recommendations: [
           {
+            path_id: 'science_pcm',
             path: "Science (PCM)",
             honest_take: "PCM is a solid gateway to engineering and design. It is demanding, but offers maximum career versatility.",
             requires_entrance_exam: "JEE Main / BITSAT",
@@ -331,6 +356,7 @@ export async function runCareerRecommendationAgent(state) {
             backup_plan: "Transition to Commerce or BCA if mathematics/physics feels too difficult."
           },
           {
+            path_id: 'commerce_maths',
             path: "Commerce with Applied Mathematics",
             honest_take: "Focuses heavily on business, accounting, and finance. Practical and structured with good industry opportunities.",
             requires_entrance_exam: "None",
@@ -346,6 +372,7 @@ export async function runCareerRecommendationAgent(state) {
       return {
         recommendations: [
           {
+            path_id: 'btech_cs_ai',
             path: "B.Tech Computer Science & AI",
             honest_take: "The most popular engineering field in India. Great packages if you code regularly, but entry competition is intense.",
             requires_entrance_exam: "JEE Main / COMEDK / KCET",
@@ -354,6 +381,7 @@ export async function runCareerRecommendationAgent(state) {
             backup_plan: "BCA followed by an MCA to enter the IT sector."
           },
           {
+            path_id: 'bsc_data_science',
             path: "B.Sc in Data Science / Analytics",
             honest_take: "A modern analytics pathway focusing on statistics, programming, and databases. An excellent alternative to engineering.",
             requires_entrance_exam: "CUET / None",
@@ -367,6 +395,7 @@ export async function runCareerRecommendationAgent(state) {
       return {
         recommendations: [
           {
+            path_id: 'bsc_biotech',
             path: "B.Sc Biotechnology / Genetics",
             honest_take: "Great research and lab-oriented career. Avoids NEET pressure but requires higher education to secure top roles.",
             requires_entrance_exam: "CUET / None",
@@ -375,6 +404,7 @@ export async function runCareerRecommendationAgent(state) {
             backup_plan: "Transition to MBA in Biotech or Clinical Research Management."
           },
           {
+            path_id: 'bpt_physiotherapy',
             path: "Bachelor of Physiotherapy (BPT)",
             honest_take: "An excellent clinical option with a focus on patient rehabilitation. High demand in private clinics and sports academies.",
             requires_entrance_exam: "State CET / NEET",
@@ -388,6 +418,7 @@ export async function runCareerRecommendationAgent(state) {
       return {
         recommendations: [
           {
+            path_id: 'ca_finance',
             path: "Chartered Accountancy (CA)",
             honest_take: "One of the most prestigious finance careers. Affordable to pursue but demands immense discipline and multiple attempt persistence.",
             requires_entrance_exam: "CA Foundation",
@@ -396,6 +427,7 @@ export async function runCareerRecommendationAgent(state) {
             backup_plan: "B.Com + MBA in Finance."
           },
           {
+            path_id: 'bba_finance',
             path: "BBA in Financial Analyst",
             honest_take: "A highly dynamic management degree focusing on corporate finance, stocks, and investments. Offers faster corporate entry.",
             requires_entrance_exam: "CUET / IPMAT",
@@ -430,16 +462,18 @@ export async function runCollegeRecommendationAgent(state) {
     1. You MUST ONLY recommend colleges that are present in the "Retrieved Colleges" list provided above. Do NOT hallucinate other institutions.
     2. Ensure that the yearly fee range of each recommended college is compatible with the Student Budget (${form.budget}) and that their minimum marks requirements are met by the student's marks of ${form.marks}%.
     3. State clearly in the "whyFit" field how the college's fee range fits the student's budget and how their marks meet the admission criteria.
+    4. The "path_id" in each mapping MUST exactly match the "path_id" from the Career Recommendations above. Do NOT alter or omit it.
 
     Map colleges to the career paths.
     Respond ONLY with a JSON object:
     {
       "mappings": [
         {
+          "path_id": "Copy exactly from Career Recommendations — do not change",
           "path": "Career/Course name (matching one of the recommendations)",
           "colleges": [
             {
-              "name": "College Name",
+              "name": "College Name (must be from Retrieved Colleges list)",
               "city": "City",
               "state": "State",
               "feeRange": "₹X–₹Y/yr",
@@ -456,13 +490,15 @@ export async function runCollegeRecommendationAgent(state) {
     console.warn('[CollegeRecommendationAgent] Falling back to local mock mapping...')
     return {
       mappings: (careerPaths.recommendations || []).map(opt => {
+        const pathId = opt.path_id || ''
         const pathLower = (opt.path || '').toLowerCase()
         let fallbackColleges = []
 
-        if (pathLower.includes('commerce') || pathLower.includes('accountancy') || pathLower.includes('bba') || pathLower.includes('finance') || pathLower.includes('ca')) {
+        if (pathId === 'ca_finance' || pathId === 'bba_finance' ||
+            pathLower.includes('commerce') || pathLower.includes('accountancy') || pathLower.includes('bba') || pathLower.includes('finance') || pathLower.includes('ca')) {
           fallbackColleges = [
             {
-              name: "Shri Ram College of Commerce (SRCC)",
+              name: "Shri Ram College of Commerce",
               city: "Delhi",
               state: "Delhi",
               feeRange: "₹58,000–₹1,08,000/yr",
@@ -478,7 +514,8 @@ export async function runCollegeRecommendationAgent(state) {
               whyFit: "Highly respected institution for business and commerce studies."
             }
           ]
-        } else if (pathLower.includes('arts') || pathLower.includes('humanities') || pathLower.includes('ias') || pathLower.includes('civil')) {
+        } else if (pathId.includes('humanities') || pathId.includes('arts') ||
+                   pathLower.includes('arts') || pathLower.includes('humanities') || pathLower.includes('ias') || pathLower.includes('civil')) {
           fallbackColleges = [
             {
               name: "Lady Shri Ram College",
@@ -489,7 +526,7 @@ export async function runCollegeRecommendationAgent(state) {
               whyFit: "Elite humanities institution with extremely affordable fees."
             },
             {
-              name: "St. Xavier's College",
+              name: "St. Xavier's College Mumbai",
               city: "Mumbai",
               state: "Maharashtra",
               feeRange: "₹92,000–₹1,72,000/yr",
@@ -497,7 +534,8 @@ export async function runCollegeRecommendationAgent(state) {
               whyFit: "Historical institution renowned for arts and liberal education."
             }
           ]
-        } else if (pathLower.includes('doctor') || pathLower.includes('neet') || pathLower.includes('mbbs') || pathLower.includes('biotech') || pathLower.includes('physiotherapy')) {
+        } else if (pathId === 'bsc_biotech' || pathId === 'bpt_physiotherapy' ||
+                   pathLower.includes('doctor') || pathLower.includes('neet') || pathLower.includes('mbbs') || pathLower.includes('biotech') || pathLower.includes('physiotherapy')) {
           fallbackColleges = [
             {
               name: "AIIMS New Delhi",
@@ -517,11 +555,11 @@ export async function runCollegeRecommendationAgent(state) {
             }
           ]
         } else {
-          // Default Science/Engineering
+          // Default Science/Engineering (PCM paths including btech_cs_ai, bsc_data_science)
           fallbackColleges = [
             {
               name: "RV College of Engineering",
-              city: "Bengaluru",
+              city: "Bangalore",
               state: "Karnataka",
               feeRange: "₹1,40,000–₹2,25,000/yr",
               admissionMode: "KCET / COMEDK",
@@ -529,7 +567,7 @@ export async function runCollegeRecommendationAgent(state) {
             },
             {
               name: "PES University",
-              city: "Bengaluru",
+              city: "Bangalore",
               state: "Karnataka",
               feeRange: "₹1,95,000–₹3,15,000/yr",
               admissionMode: "PESSAT / KCET",
@@ -541,13 +579,15 @@ export async function runCollegeRecommendationAgent(state) {
         // Adjust fallback colleges if the budget is very low (e.g., below_20k or below_1L)
         if (form.budget === 'below_20k' || form.budget === 'below_1L') {
           fallbackColleges = fallbackColleges.map(c => {
-            if (c.name.includes("RV College") || c.name.includes("PES University")) {
+            if (c.name === 'RV College of Engineering' || c.name === 'PES University') {
               return {
                 ...c,
-                name: "Government Engineering College (GEC)",
-                feeRange: "₹15,000–₹35,000/yr",
-                admissionMode: "State CET (Merit)",
-                whyFit: "Government college seats offer excellent education at highly subsidized rates."
+                name: "NIT Patna",
+                city: "Patna",
+                state: "Bihar",
+                feeRange: "₹1,18,000–₹1,80,000/yr",
+                admissionMode: "JEE Main (State Quota)",
+                whyFit: "National Institute offering quality engineering education at subsidized fees."
               }
             }
             return c
@@ -555,6 +595,7 @@ export async function runCollegeRecommendationAgent(state) {
         }
 
         return {
+          path_id: opt.path_id,
           path: opt.path,
           colleges: retrievedColleges.length > 0
             ? retrievedColleges.slice(0, 3).map(c => ({
@@ -689,10 +730,12 @@ export async function runCareerRoadmapAgent(state) {
     Student Income Range: ${form.incomeRange}
 
     Generate a 4-year milestone grid. If Class 10, Year 1/2 are school, Year 3/4 are college. If Class 12, Years are college 1-4.
+    IMPORTANT: The "path_id" in each roadmap MUST exactly match the "path_id" from the Career Options above. Do NOT alter or omit it.
     Respond ONLY with a JSON object:
     {
       "roadmaps": [
         {
+          "path_id": "Copy exactly from Career Options — do not change",
           "path": "Career/Course name",
           "years": [
             {
@@ -737,6 +780,7 @@ export async function runCareerRoadmapAgent(state) {
     console.warn('[CareerRoadmapAgent] Falling back to local mock roadmap maker...')
     return {
       roadmaps: (careerPaths.recommendations || []).map(opt => ({
+        path_id: opt.path_id,
         path: opt.path,
         years: [
           {
@@ -978,6 +1022,25 @@ export async function runMultiAgentOrchestrator(formData) {
   state.mentorMatches = mentorResult || []
   state.youtubeResources = youtubeResult || []
 
+  // ─── COLLEGE GUARDRAIL: strip hallucinated names (Bug #2 fix) ───────────────
+  // Build an allow-list from the DB-retrieved colleges (the only verified source of truth).
+  if (state.retrievedColleges.length > 0) {
+    const allowedCollegeNames = new Set(state.retrievedColleges.map(c => c.name))
+    let totalRemoved = 0
+    state.collegeRecommendations = state.collegeRecommendations.map(mapping => {
+      const before = mapping.colleges ? mapping.colleges.length : 0
+      const filtered = (mapping.colleges || []).filter(c => allowedCollegeNames.has(c.name))
+      const removed = before - filtered.length
+      totalRemoved += removed
+      return { ...mapping, colleges: filtered }
+    })
+    if (totalRemoved > 0) {
+      console.warn(`[CollegeGuardrail] Removed ${totalRemoved} hallucinated college name(s) from LLM output.`)
+    } else {
+      console.log('[CollegeGuardrail] All college names verified against DB — no hallucinations detected.')
+    }
+  }
+
   // ─── STAGE 4: Synthesis & Final Summary ───
   console.log('[Orchestrator] Starting Stage 4: Synthesis & Final Summary')
   const summaryResult = await logStep('Summary Agent', () => runSummaryAgent(state))
@@ -991,9 +1054,25 @@ export async function runMultiAgentOrchestrator(formData) {
   return {
     summary: state.finalSummary.summary,
     options: (state.careerPaths.recommendations || []).map(opt => {
-      // Find mapped colleges & roadmaps for this option path
-      const mappedCol = state.collegeRecommendations.find(m => m.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(m.path.toLowerCase()))
-      const mappedRoad = state.roadmaps.find(r => r.path.toLowerCase().includes(opt.path.toLowerCase()) || opt.path.toLowerCase().includes(r.path.toLowerCase()))
+      // ── Bug #1 fix: match by path_id (strict equality) with path-text fallback ──
+      // Priority 1: both sides have path_id → exact match (no ambiguity)
+      // Priority 2: only one side has path_id → match on normalized path text
+      const matchMapping = (m) => {
+        if (opt.path_id && m.path_id) return opt.path_id === m.path_id
+        // Fallback for LLMs that omit path_id: normalized exact-text comparison
+        return (m.path || '').trim().toLowerCase() === (opt.path || '').trim().toLowerCase()
+      }
+
+      const mappedCol = state.collegeRecommendations.find(matchMapping)
+      const mappedRoad = state.roadmaps.find(matchMapping)
+
+      if (!mappedCol) {
+        console.warn(`[Orchestrator] No college mapping found for path_id="${opt.path_id}" path="${opt.path}"`)
+      }
+      if (!mappedRoad) {
+        console.warn(`[Orchestrator] No roadmap found for path_id="${opt.path_id}" path="${opt.path}"`)
+      }
+
       // For Class 10, the user is looking at high school + local coaching cost.
       // We estimate this cost based on their selected high school/coaching budget range.
       let costStr = '₹20,000–₹60,000/yr'

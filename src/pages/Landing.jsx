@@ -297,7 +297,7 @@ export default function Landing() {
               id="hero-cta-10"
               className="btn-primary text-base px-8 py-4 animate-pulse-glow font-semibold tracking-wide flex items-center gap-2"
             >
-              <span>Class 10 Guide</span>
+              <span>10th Passer</span>
               <span className="text-xs bg-black/20 px-2 py-0.5 rounded">Stream selection</span>
             </Link>
             <Link
@@ -305,7 +305,7 @@ export default function Landing() {
               id="hero-cta-12"
               className="btn-primary text-base px-8 py-4 animate-pulse-glow font-semibold tracking-wide flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 border-purple-500/30 hover:from-purple-500 hover:to-indigo-500 shadow-purple-500/20"
             >
-              <span>Class 12 Guide</span>
+              <span>12th Passer</span>
               <span className="text-xs bg-black/20 px-2 py-0.5 rounded">College & Career</span>
             </Link>
             <Link to="/mentors" className="btn-outline text-base px-8 py-4 font-semibold">
